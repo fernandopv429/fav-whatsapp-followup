@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 
 interface SettingsForm {
-  responseThresholdMinutes: number;
+  msg1ThresholdMinutes: number;
+  msg2ThresholdMinutes: number;
   dripTotalDays: number;
   sendWindowStart: number;
   sendWindowEnd: number;
@@ -16,14 +17,19 @@ interface SettingsForm {
 
 const FIELDS: { key: keyof SettingsForm; label: string; hint: string }[] = [
   {
-    key: "responseThresholdMinutes",
-    label: "Limiar de resposta imediata (minutos)",
-    hint: "Respostas até esse tempo viram tag 'resposta imediata'; depois disso viram 'potencial cliente'.",
+    key: "msg1ThresholdMinutes",
+    label: "Limiar da mensagem 1 (minutos)",
+    hint: "Resposta até esse tempo = pode ter IA (manda a msg de verificação). Sem resposta até esse tempo = já confirma 'não tem IA' e entra na simulação.",
+  },
+  {
+    key: "msg2ThresholdMinutes",
+    label: "Limiar da mensagem 2 / verificação (minutos)",
+    hint: "Resposta até esse tempo confirma 'tem IA' (sai do funil). Sem resposta até esse tempo confirma 'não tem IA'.",
   },
   {
     key: "dripTotalDays",
     label: "Dias totais da simulação de cliente perdido",
-    hint: "Depois desses dias sem conversão, o contato é marcado como 'perdido'.",
+    hint: "Depois desses dias, dispara automaticamente a oferta final personalizada por IA.",
   },
   { key: "sendWindowStart", label: "Início da janela de envio (hora, 0-23)", hint: "" },
   { key: "sendWindowEnd", label: "Fim da janela de envio (hora, 0-23)", hint: "" },

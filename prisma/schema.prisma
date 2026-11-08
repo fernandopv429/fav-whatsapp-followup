@@ -16,11 +16,10 @@ enum NumberStatus {
 
 enum ContactStage {
   novo
-  aguardando_resposta
-  resposta_imediata
-  potencial_cliente
+  aguardando_msg1
+  aguardando_msg2
+  tem_ia
   em_drip
-  qualificado
   oferta_enviada
   convertido
   perdido
@@ -77,6 +76,7 @@ model Contact {
   assignedNumberId String?
   assignedNumber  WhatsappNumber? @relation(fields: [assignedNumberId], references: [id])
   initialSentAt   DateTime?
+  msg2SentAt      DateTime?
   firstReplyAt    DateTime?
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
@@ -130,7 +130,8 @@ model DripState {
 
 model Settings {
   id                      Int      @id @default(1)
-  responseThresholdMinutes Int     @default(60)
+  msg1ThresholdMinutes    Int      @default(60)
+  msg2ThresholdMinutes    Int      @default(15)
   dripTotalDays           Int      @default(7)
   sendWindowStart         Int      @default(8)
   sendWindowEnd           Int      @default(20)

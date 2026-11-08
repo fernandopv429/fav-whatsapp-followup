@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
+import Link from "next/link";
 
 interface Contact {
   id: string;
@@ -16,11 +17,10 @@ interface Contact {
 
 const STAGE_LABEL: Record<string, string> = {
   novo: "Novo",
-  aguardando_resposta: "Aguardando resposta",
-  resposta_imediata: "Resposta imediata",
-  potencial_cliente: "Potencial cliente",
-  em_drip: "Em simulação (drip)",
-  qualificado: "Qualificado",
+  aguardando_msg1: "Aguardando resposta (msg 1)",
+  aguardando_msg2: "Verificando IA (msg 2)",
+  tem_ia: "Tem IA (fora do funil)",
+  em_drip: "Simulação de cliente perdido",
   oferta_enviada: "Oferta enviada",
   convertido: "Convertido",
   perdido: "Perdido",
@@ -28,10 +28,6 @@ const STAGE_LABEL: Record<string, string> = {
 
 export default function ContatosPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
-  const [templateText, setTemplateText] = useState("");
-  const [templateSaved, setTemplateSaved] = useState(true);
-  const [ofertaPrompt, setOfertaPrompt] = useState("");
-  const [ofertaSaved, setOfertaSaved] = useState(true);
   const [sourceBatch, setSourceBatch] = useState("");
   const [niche, setNiche] = useState("");
   const [leadSource, setLeadSource] = useState("");
@@ -51,12 +47,6 @@ export default function ContatosPage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount é intencional aqui
     loadContacts();
-    fetch("/api/templates/inicial")
-      .then((r) => r.json())
-      .then((t) => setTemplateText(t?.bodyText ?? ""));
-    fetch("/api/templates/oferta")
-      .then((r) => r.json())
-      .then((t) => setOfertaPrompt(t?.bodyText ?? ""));
   }, [loadContacts]);
 
   const knownNiches = useMemo(
@@ -71,24 +61,6 @@ export default function ContatosPage() {
     () => (nicheFilter === "todos" ? contacts : contacts.filter((c) => c.niche === nicheFilter)),
     [contacts, nicheFilter]
   );
-
-  async function saveTemplate() {
-    await fetch("/api/templates/inicial", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ bodyText: templateText }),
-    });
-    setTemplateSaved(true);
-  }
-
-  async function saveOfertaPrompt() {
-    await fetch("/api/templates/oferta", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ bodyText: ofertaPrompt }),
-    });
-    setOfertaSaved(true);
-  }
 
   async function handleUpload(e: React.FormEvent) {
     e.preventDefault();
@@ -138,55 +110,13 @@ export default function ContatosPage() {
     <div className="space-y-6">
       <h1 className="text-lg font-semibold text-neutral-900">Contatos</h1>
 
-      <div className="space-y-2 rounded-lg border border-neutral-200 bg-white p-4">
-        <label className="text-sm font-medium text-neutral-700">
-          Mensagem inicial (disparada pra todo contato novo — use <code>{"{{nome}}"}</code> se quiser personalizar)
-        </label>
-        <textarea
-          className="w-full rounded border border-neutral-300 px-3 py-2 text-sm"
-          rows={4}
-          value={templateText}
-          onChange={(e) => {
-            setTemplateText(e.target.value);
-            setTemplateSaved(false);
-          }}
-        />
-        <button
-          onClick={saveTemplate}
-          disabled={templateSaved}
-          className="rounded bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-        >
-          {templateSaved ? "Salvo" : "Salvar mensagem"}
-        </button>
-      </div>
-
-      <div className="space-y-2 rounded-lg border border-neutral-200 bg-white p-4">
-        <label className="text-sm font-medium text-neutral-700">
-          Instruções para a IA gerar a mensagem de oferta (usada quando você clicar em &quot;Gerar oferta
-          IA&quot; num contato)
-        </label>
-        <p className="text-xs text-neutral-400">
-          Escreva como se estivesse orientando alguém: o que oferecer, tom de voz, o que considerar dos
-          dados da empresa. A IA recebe isso + os dados do CSV daquele contato (incluindo nicho) e devolve
-          o texto final.
-        </p>
-        <textarea
-          className="w-full rounded border border-neutral-300 px-3 py-2 text-sm"
-          rows={5}
-          value={ofertaPrompt}
-          onChange={(e) => {
-            setOfertaPrompt(e.target.value);
-            setOfertaSaved(false);
-          }}
-        />
-        <button
-          onClick={saveOfertaPrompt}
-          disabled={ofertaSaved}
-          className="rounded bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-        >
-          {ofertaSaved ? "Salvo" : "Salvar instruções"}
-        </button>
-      </div>
+      <p className="text-sm text-neutral-500">
+        A mensagem inicial, a de verificação e as da simulação de cliente perdido ficam em{" "}
+        <Link href="/mensagens" className="text-blue-600 hover:underline">
+          Mensagens
+        </Link>
+        .
+      </p>
 
       <form onSubmit={handleUpload} className="space-y-3 rounded-lg border border-neutral-200 bg-white p-4">
         <p className="text-sm font-medium text-neutral-700">Subir lista de contatos (CSV)</p>

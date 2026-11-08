@@ -1,0 +1,138 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum NumberStatus {
+  warming_up
+  active
+  paused
+  banned
+}
+
+enum ContactStage {
+  novo
+  aguardando_resposta
+  resposta_imediata
+  potencial_cliente
+  em_drip
+  convertido
+  perdido
+}
+
+enum LogDirection {
+  out
+  in
+}
+
+enum LogStatus {
+  queued
+  sent
+  delivered
+  failed
+}
+
+enum DripStatus {
+  ativo
+  pausado
+  concluido
+  convertido
+}
+
+model WhatsappNumber {
+  id                  String       @id @default(cuid())
+  label               String
+  evolutionInstanceName String     @unique
+  evolutionInstanceToken String?
+  phoneNumber         String?
+  status              NumberStatus @default(warming_up)
+  dailyCap            Int          @default(20)
+  sentToday           Int          @default(0)
+  lastSentAt          DateTime?
+  nextEligibleAt      DateTime?
+  capResetAt          DateTime?
+  warmupStartedAt      DateTime    @default(now())
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  contacts   Contact[]
+  messageLogs MessageLog[]
+}
+
+model Contact {
+  id              String       @id @default(cuid())
+  phone           String
+  name            String?
+  sourceBatch     String?
+  stage           ContactStage @default(novo)
+  assignedNumberId String?
+  assignedNumber  WhatsappNumber? @relation(fields: [assignedNumberId], references: [id])
+  initialSentAt   DateTime?
+  firstReplyAt    DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  messageLogs MessageLog[]
+  dripState   DripState?
+
+  @@unique([phone])
+  @@index([stage])
+}
+
+model MessageTemplate {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  bodyText  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model MessageLog {
+  id               String       @id @default(cuid())
+  contactId        String
+  contact          Contact      @relation(fields: [contactId], references: [id])
+  numberId         String?
+  number           WhatsappNumber? @relation(fields: [numberId], references: [id])
+  direction        LogDirection
+  templateKey      String?
+  body             String
+  evolutionMessageId String?
+  status           LogStatus    @default(queued)
+  createdAt        DateTime     @default(now())
+  sentAt           DateTime?
+
+  @@index([status])
+  @@index([contactId])
+}
+
+model DripState {
+  id          String     @id @default(cuid())
+  contactId   String     @unique
+  contact     Contact    @relation(fields: [contactId], references: [id])
+  currentDay  Int        @default(0)
+  lastSentAt  DateTime?
+  nextDueAt   DateTime?
+  status      DripStatus @default(ativo)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([status, nextDueAt])
+}
+
+model Settings {
+  id                      Int      @id @default(1)
+  responseThresholdMinutes Int     @default(60)
+  dripTotalDays           Int      @default(7)
+  sendWindowStart         Int      @default(8)
+  sendWindowEnd           Int      @default(20)
+  minDelaySeconds         Int      @default(45)
+  maxDelaySeconds         Int      @default(180)
+  warmupDailyCapStart     Int      @default(20)
+  warmupDailyCapMax       Int      @default(150)
+  warmupRampDays          Int      @default(14)
+  updatedAt               DateTime @updatedAt
+}

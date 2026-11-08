@@ -1,0 +1,91 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+interface SettingsForm {
+  responseThresholdMinutes: number;
+  dripTotalDays: number;
+  sendWindowStart: number;
+  sendWindowEnd: number;
+  minDelaySeconds: number;
+  maxDelaySeconds: number;
+  warmupDailyCapStart: number;
+  warmupDailyCapMax: number;
+  warmupRampDays: number;
+}
+
+const FIELDS: { key: keyof SettingsForm; label: string; hint: string }[] = [
+  {
+    key: "responseThresholdMinutes",
+    label: "Limiar de resposta imediata (minutos)",
+    hint: "Respostas até esse tempo viram tag 'resposta imediata'; depois disso viram 'potencial cliente'.",
+  },
+  {
+    key: "dripTotalDays",
+    label: "Dias totais da simulação de cliente perdido",
+    hint: "Depois desses dias sem conversão, o contato é marcado como 'perdido'.",
+  },
+  { key: "sendWindowStart", label: "Início da janela de envio (hora, 0-23)", hint: "" },
+  { key: "sendWindowEnd", label: "Fim da janela de envio (hora, 0-23)", hint: "" },
+  { key: "minDelaySeconds", label: "Delay mínimo entre envios por número (segundos)", hint: "" },
+  { key: "maxDelaySeconds", label: "Delay máximo entre envios por número (segundos)", hint: "" },
+  { key: "warmupDailyCapStart", label: "Cap diário inicial de número novo", hint: "" },
+  { key: "warmupDailyCapMax", label: "Cap diário máximo após aquecer", hint: "" },
+  { key: "warmupRampDays", label: "Dias até atingir o cap máximo", hint: "" },
+];
+
+export default function ConfiguracoesPage() {
+  const [form, setForm] = useState<SettingsForm | null>(null);
+  const [saved, setSaved] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/configuracoes")
+      .then((r) => r.json())
+      .then(setForm);
+  }, []);
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form) return;
+    await fetch("/api/configuracoes", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    });
+    setSaved(true);
+  }
+
+  if (!form) return <p className="text-sm text-neutral-400">Carregando...</p>;
+
+  return (
+    <div className="max-w-xl space-y-6">
+      <h1 className="text-lg font-semibold text-neutral-900">Configurações</h1>
+
+      <form onSubmit={handleSave} className="space-y-4 rounded-lg border border-neutral-200 bg-white p-4">
+        {FIELDS.map((f) => (
+          <div key={f.key} className="space-y-1">
+            <label className="text-sm font-medium text-neutral-700">{f.label}</label>
+            <input
+              type="number"
+              value={form[f.key]}
+              onChange={(e) => {
+                setForm({ ...form, [f.key]: Number(e.target.value) });
+                setSaved(false);
+              }}
+              className="w-full rounded border border-neutral-300 px-3 py-2 text-sm"
+            />
+            {f.hint && <p className="text-xs text-neutral-400">{f.hint}</p>}
+          </div>
+        ))}
+
+        <button
+          type="submit"
+          disabled={saved}
+          className="rounded bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        >
+          {saved ? "Salvo" : "Salvar configurações"}
+        </button>
+      </form>
+    </div>
+  );
+}

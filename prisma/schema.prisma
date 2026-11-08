@@ -20,6 +20,8 @@ enum ContactStage {
   resposta_imediata
   potencial_cliente
   em_drip
+  qualificado
+  oferta_enviada
   convertido
   perdido
 }
@@ -68,6 +70,7 @@ model Contact {
   phone           String
   name            String?
   sourceBatch     String?
+  companyData     Json?
   stage           ContactStage @default(novo)
   assignedNumberId String?
   assignedNumber  WhatsappNumber? @relation(fields: [assignedNumberId], references: [id])

@@ -1,0 +1,54 @@
+import Anthropic from "@anthropic-ai/sdk";
+
+const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
+
+function getClient(): Anthropic {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error("ANTHROPIC_API_KEY não configurado no ambiente.");
+  }
+  return new Anthropic({ apiKey });
+}
+
+/**
+ * Gera a mensagem de oferta personalizada pra um contato, usando os dados
+ * da empresa que vieram no CSV. `promptInstructions` é o texto escrito pelo
+ * usuário na tela de Contatos (o que a IA deve considerar/como deve escrever);
+ * a IA devolve só a mensagem final, pronta pra mandar no WhatsApp.
+ */
+export async function generatePersonalizedOffer(params: {
+  promptInstructions: string;
+  contactName: string | null;
+  companyData: Record<string, unknown> | null;
+}): Promise<string> {
+  const client = getClient();
+  const model = process.env.ANTHROPIC_MODEL || DEFAULT_MODEL;
+
+  const dadosEmpresa = params.companyData
+    ? JSON.stringify(params.companyData, null, 2)
+    : "(nenhum dado de empresa disponível para esse contato)";
+
+  const response = await client.messages.create({
+    model,
+    max_tokens: 400,
+    system:
+      "Você escreve mensagens de WhatsApp curtas, diretas e personalizadas para prospecção " +
+      "comercial de um escritório de advocacia. Responda SOMENTE com o texto final da mensagem, " +
+      "sem aspas, sem explicações, sem saudação formal genérica — direto o conteúdo que será enviado.",
+    messages: [
+      {
+        role: "user",
+        content:
+          `Instruções de como personalizar a mensagem:\n${params.promptInstructions}\n\n` +
+          `Nome do contato: ${params.contactName ?? "(desconhecido)"}\n` +
+          `Dados da empresa (JSON vindo da planilha, use o que for relevante):\n${dadosEmpresa}`,
+      },
+    ],
+  });
+
+  const textBlock = response.content.find((b) => b.type === "text");
+  if (!textBlock || textBlock.type !== "text") {
+    throw new Error("Resposta da IA não trouxe texto.");
+  }
+  return textBlock.text.trim();
+}

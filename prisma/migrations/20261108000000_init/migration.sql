@@ -5,7 +5,7 @@ CREATE SCHEMA IF NOT EXISTS "public";
 CREATE TYPE "NumberStatus" AS ENUM ('warming_up', 'active', 'paused', 'banned');
 
 -- CreateEnum
-CREATE TYPE "ContactStage" AS ENUM ('novo', 'aguardando_resposta', 'resposta_imediata', 'potencial_cliente', 'em_drip', 'convertido', 'perdido');
+CREATE TYPE "ContactStage" AS ENUM ('novo', 'aguardando_resposta', 'resposta_imediata', 'potencial_cliente', 'em_drip', 'qualificado', 'oferta_enviada', 'convertido', 'perdido');
 
 -- CreateEnum
 CREATE TYPE "LogDirection" AS ENUM ('out', 'in');
@@ -42,6 +42,7 @@ CREATE TABLE "Contact" (
     "phone" TEXT NOT NULL,
     "name" TEXT,
     "sourceBatch" TEXT,
+    "companyData" JSONB,
     "stage" "ContactStage" NOT NULL DEFAULT 'novo',
     "assignedNumberId" TEXT,
     "initialSentAt" TIMESTAMP(3),

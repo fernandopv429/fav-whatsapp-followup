@@ -8,6 +8,8 @@ interface CsvRow {
   [key: string]: string;
 }
 
+const RESERVED_KEYS = new Set(["telefone", "phone", "celular", "nome", "name"]);
+
 export async function POST(req: NextRequest) {
   const template = await prisma.messageTemplate.findUnique({ where: { key: "inicial" } });
   if (!template || !template.bodyText.trim()) {
@@ -47,9 +49,14 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
+    const companyEntries = Object.entries(normalizedRow).filter(
+      ([k, v]) => !RESERVED_KEYS.has(k) && v !== ""
+    );
+    const companyData = companyEntries.length > 0 ? Object.fromEntries(companyEntries) : undefined;
+
     try {
       const contact = await prisma.contact.create({
-        data: { phone, name, sourceBatch, stage: "novo" },
+        data: { phone, name, sourceBatch, stage: "novo", companyData },
       });
 
       await prisma.messageLog.create({

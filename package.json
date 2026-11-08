@@ -10,6 +10,7 @@
     "worker": "node scripts/worker.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0",
     "@prisma/client": "6.19.3",
     "iron-session": "^9.0.1",
     "next": "16.4.5",

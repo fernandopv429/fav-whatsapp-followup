@@ -12,6 +12,9 @@ RUN npx prisma generate
 RUN npm run build
 
 FROM node:24-slim AS prod-deps
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl \
+  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev

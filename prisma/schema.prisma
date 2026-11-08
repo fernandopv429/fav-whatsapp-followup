@@ -50,6 +50,7 @@ model WhatsappNumber {
   evolutionInstanceName String     @unique
   evolutionInstanceToken String?
   phoneNumber         String?
+  order               Int          @default(0)
   status              NumberStatus @default(warming_up)
   dailyCap            Int          @default(20)
   sentToday           Int          @default(0)
@@ -132,7 +133,6 @@ model Settings {
   id                      Int      @id @default(1)
   msg1ThresholdMinutes    Int      @default(60)
   msg2ThresholdMinutes    Int      @default(15)
-  dripTotalDays           Int      @default(7)
   sendWindowStart         Int      @default(8)
   sendWindowEnd           Int      @default(20)
   minDelaySeconds         Int      @default(45)

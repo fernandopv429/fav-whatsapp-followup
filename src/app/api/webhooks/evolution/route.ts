@@ -66,6 +66,7 @@ export async function POST(req: NextRequest) {
               prisma.messageLog.create({
                 data: {
                   contactId: contact.id,
+                  numberId: contact.assignedNumberId,
                   direction: "out",
                   templateKey: "verificacao",
                   body: verificacao.bodyText,
@@ -102,6 +103,7 @@ export async function POST(req: NextRequest) {
       await prisma.messageLog.create({
         data: {
           contactId: contact.id,
+          numberId: contact.assignedNumberId,
           direction: "out",
           templateKey: specific ? dayKey : "drip_resposta_ocupado",
           body: fallback.bodyText,

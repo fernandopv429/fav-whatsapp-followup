@@ -11,6 +11,7 @@ export async function PATCH(
     status?: "warming_up" | "active" | "paused" | "banned";
     dailyCap?: number;
     label?: string;
+    order?: number;
   };
 
   const number = await prisma.whatsappNumber.update({
@@ -19,6 +20,7 @@ export async function PATCH(
       ...(body.status && { status: body.status }),
       ...(typeof body.dailyCap === "number" && { dailyCap: body.dailyCap }),
       ...(body.label && { label: body.label }),
+      ...(typeof body.order === "number" && { order: body.order }),
     },
   });
 

@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 interface SettingsForm {
   msg1ThresholdMinutes: number;
   msg2ThresholdMinutes: number;
-  dripTotalDays: number;
   sendWindowStart: number;
   sendWindowEnd: number;
   minDelaySeconds: number;
@@ -25,11 +24,6 @@ const FIELDS: { key: keyof SettingsForm; label: string; hint: string }[] = [
     key: "msg2ThresholdMinutes",
     label: "Limiar da mensagem 2 / verificação (minutos)",
     hint: "Resposta até esse tempo confirma 'tem IA' (sai do funil). Sem resposta até esse tempo confirma 'não tem IA'.",
-  },
-  {
-    key: "dripTotalDays",
-    label: "Dias totais da simulação de cliente perdido",
-    hint: "Depois desses dias, dispara automaticamente a oferta final personalizada por IA.",
   },
   { key: "sendWindowStart", label: "Início da janela de envio (hora, 0-23)", hint: "" },
   { key: "sendWindowEnd", label: "Fim da janela de envio (hora, 0-23)", hint: "" },
@@ -66,6 +60,10 @@ export default function ConfiguracoesPage() {
   return (
     <div className="max-w-xl space-y-6">
       <h1 className="text-lg font-semibold text-neutral-900">Configurações</h1>
+      <p className="text-sm text-neutral-500">
+        A quantidade de dias da simulação de cliente perdido não é configurada aqui — ela é automática,
+        igual à quantidade de números ativos (veja Números).
+      </p>
 
       <form onSubmit={handleSave} className="space-y-4 rounded-lg border border-neutral-200 bg-white p-4">
         {FIELDS.map((f) => (

@@ -7,6 +7,7 @@ interface NumberRow {
   label: string;
   evolutionInstanceName: string;
   phoneNumber: string | null;
+  order: number;
   status: "warming_up" | "active" | "paused" | "banned";
   dailyCap: number;
   sentToday: number;
@@ -89,6 +90,15 @@ export default function NumerosPage() {
     load();
   }
 
+  async function handleOrderChange(n: NumberRow, order: number) {
+    await fetch(`/api/numeros/${n.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ order }),
+    });
+    load();
+  }
+
   async function handleDelete(n: NumberRow) {
     if (!confirm(`Remover o número "${n.label}"? Isso desconecta e apaga a instance na Evolution API.`)) return;
     await fetch(`/api/numeros/${n.id}`, { method: "DELETE" });
@@ -138,10 +148,16 @@ export default function NumerosPage() {
         </div>
       )}
 
+      <p className="text-sm text-neutral-500">
+        A ordem abaixo define qual número manda o Dia 1, Dia 2 etc. da simulação de cliente perdido —
+        cada dia usa um número diferente, na ordem que você definir aqui.
+      </p>
+
       <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
         <table className="w-full text-sm">
           <thead className="bg-neutral-50 text-left text-neutral-500">
             <tr>
+              <th className="px-4 py-2">Ordem</th>
               <th className="px-4 py-2">Nome</th>
               <th className="px-4 py-2">Status</th>
               <th className="px-4 py-2">Conexão</th>
@@ -153,20 +169,28 @@ export default function NumerosPage() {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-neutral-400">
+                <td colSpan={7} className="px-4 py-6 text-center text-neutral-400">
                   Carregando...
                 </td>
               </tr>
             )}
             {!loading && numbers.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-neutral-400">
+                <td colSpan={7} className="px-4 py-6 text-center text-neutral-400">
                   Nenhum número conectado ainda.
                 </td>
               </tr>
             )}
             {numbers.map((n) => (
               <tr key={n.id} className="border-t border-neutral-100">
+                <td className="px-4 py-2">
+                  <input
+                    type="number"
+                    defaultValue={n.order}
+                    onBlur={(e) => handleOrderChange(n, Number(e.target.value))}
+                    className="w-16 rounded border border-neutral-300 px-2 py-1"
+                  />
+                </td>
                 <td className="px-4 py-2 font-medium text-neutral-900">{n.label}</td>
                 <td className="px-4 py-2">{STATUS_LABEL[n.status]}</td>
                 <td className="px-4 py-2 text-neutral-500">{n.liveStatus}</td>

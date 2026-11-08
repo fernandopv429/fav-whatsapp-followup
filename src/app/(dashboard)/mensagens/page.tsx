@@ -14,6 +14,11 @@ interface Slot {
   rows: number;
 }
 
+interface NumberRow {
+  id: string;
+  status: "warming_up" | "active" | "paused" | "banned";
+}
+
 export default function MensagensPage() {
   const [dripTotalDays, setDripTotalDays] = useState<number | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -21,9 +26,12 @@ export default function MensagensPage() {
   const [saving, setSaving] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/configuracoes")
+    fetch("/api/numeros")
       .then((r) => r.json())
-      .then((s) => setDripTotalDays(s.dripTotalDays));
+      .then((numbers: NumberRow[]) => {
+        const ativos = numbers.filter((n) => n.status === "active" || n.status === "warming_up");
+        setDripTotalDays(ativos.length);
+      });
     fetch("/api/templates")
       .then((r) => r.json())
       .then((templates: TemplateRow[]) => {
@@ -54,7 +62,7 @@ export default function MensagensPage() {
         base.push({
           key: `drip_dia_${day}`,
           label: `Simulação de cliente perdido — dia ${day}`,
-          hint: "Enviada automaticamente nesse dia da sequência, pros contatos marcados como 'não tem IA'.",
+          hint: `Enviada automaticamente pelo número ${day} (na ordem definida em Números), pros contatos marcados como 'não tem IA'.`,
           rows: 3,
         });
       }
@@ -97,6 +105,10 @@ export default function MensagensPage() {
       <p className="text-sm text-neutral-500">
         Todos os textos usados pelo funil: a mensagem inicial, a verificação de IA, a sequência de
         simulação de cliente perdido e a oferta final.
+      </p>
+      <p className="text-sm text-neutral-500">
+        A quantidade de dias da simulação abaixo ({dripTotalDays ?? "..."}) é igual à quantidade de
+        números ativos agora — conecte mais números em <strong>Números</strong> pra ter mais dias.
       </p>
 
       {slots.map((slot) => (

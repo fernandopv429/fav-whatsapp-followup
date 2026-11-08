@@ -16,7 +16,7 @@ function slugify(label: string): string {
 
 export async function GET() {
   const numbers = await prisma.whatsappNumber.findMany({
-    orderBy: { createdAt: "asc" },
+    orderBy: [{ order: "asc" }, { createdAt: "asc" }],
   });
 
   let live: Awaited<ReturnType<typeof fetchInstances>> = [];
@@ -59,6 +59,7 @@ export async function POST(req: NextRequest) {
   }
 
   const settings = await getSettings();
+  const existingCount = await prisma.whatsappNumber.count();
   const number = await prisma.whatsappNumber.create({
     data: {
       label,
@@ -66,6 +67,7 @@ export async function POST(req: NextRequest) {
       evolutionInstanceToken: instanceToken,
       status: "warming_up",
       dailyCap: settings.warmupDailyCapStart,
+      order: existingCount,
     },
   });
 

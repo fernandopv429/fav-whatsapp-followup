@@ -8,7 +8,6 @@ export async function GET() {
 const NUMERIC_FIELDS = [
   "msg1ThresholdMinutes",
   "msg2ThresholdMinutes",
-  "dripTotalDays",
   "sendWindowStart",
   "sendWindowEnd",
   "minDelaySeconds",

@@ -73,8 +73,19 @@ async function advanceTimeouts(settings: Settings, now: Date): Promise<number> {
   return expired.length;
 }
 
-/** Envia a próxima mensagem do drip, ou dispara a oferta final quando a sequência termina. */
-async function advanceDrip(settings: Settings, now: Date): Promise<number> {
+/**
+ * Envia a próxima mensagem do drip, ou dispara a oferta final quando a sequência
+ * termina. Cada "dia" da simulação usa um número diferente (reforça a ilusão de
+ * vários leads distintos) — a quantidade de dias é dinâmica: igual à quantidade
+ * de números ativos no momento, na ordem que o usuário definiu em Números.
+ */
+async function advanceDrip(now: Date): Promise<number> {
+  const activeNumbers = await prisma.whatsappNumber.findMany({
+    where: { status: { in: ["warming_up", "active"] } },
+    orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+  });
+  const totalDays = activeNumbers.length;
+
   const due = await prisma.dripState.findMany({
     where: { status: "ativo", nextDueAt: { lte: now } },
     include: { contact: true },
@@ -83,13 +94,16 @@ async function advanceDrip(settings: Settings, now: Date): Promise<number> {
   let advanced = 0;
 
   for (const drip of due) {
-    if (drip.currentDay >= settings.dripTotalDays) {
+    if (totalDays === 0) continue; // nenhum número conectado ainda: tenta de novo no próximo tick
+
+    if (drip.currentDay >= totalDays) {
       await finalizarComOferta(drip.contact);
       advanced++;
       continue;
     }
 
     const nextDay = drip.currentDay + 1;
+    const numberForDay = activeNumbers[drip.currentDay]; // dia 1 = índice 0
     const template = await prisma.messageTemplate.findUnique({ where: { key: `drip_dia_${nextDay}` } });
     if (!template?.bodyText.trim()) {
       // sem template pra esse dia: pula o envio mas avança o dia mesmo assim,
@@ -106,6 +120,7 @@ async function advanceDrip(settings: Settings, now: Date): Promise<number> {
       prisma.messageLog.create({
         data: {
           contactId: drip.contactId,
+          numberId: numberForDay.id,
           direction: "out",
           templateKey: `drip_dia_${nextDay}`,
           body: template.bodyText,
@@ -169,7 +184,7 @@ export async function tick(): Promise<TickResult> {
   const now = new Date();
 
   const timeouts = await advanceTimeouts(settings, now);
-  const dripAdvances = await advanceDrip(settings, now);
+  const dripAdvances = await advanceDrip(now);
 
   const hour = now.getHours();
   if (hour < settings.sendWindowStart || hour >= settings.sendWindowEnd) {
@@ -196,7 +211,11 @@ export async function tick(): Promise<TickResult> {
     }
 
     const nextMessage = await prisma.messageLog.findFirst({
-      where: { status: "queued", direction: "out" },
+      where: {
+        status: "queued",
+        direction: "out",
+        OR: [{ numberId: null }, { numberId: number.id }],
+      },
       orderBy: { createdAt: "asc" },
       include: { contact: true },
     });

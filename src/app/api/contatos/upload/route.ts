@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import Papa from "papaparse";
 import { prisma } from "@/lib/prisma";
 import { normalizePhoneBR } from "@/lib/phone";
-import { renderTemplate } from "@/lib/templates";
 
 interface CsvRow {
   [key: string]: string;
@@ -32,14 +31,6 @@ function extractName(row: Record<string, string>): string | null {
 }
 
 export async function POST(req: NextRequest) {
-  const template = await prisma.messageTemplate.findUnique({ where: { key: "inicial" } });
-  if (!template || !template.bodyText.trim()) {
-    return NextResponse.json(
-      { error: "Defina a mensagem inicial antes de subir uma lista de contatos." },
-      { status: 400 }
-    );
-  }
-
   const form = await req.formData();
   const file = form.get("file");
   const sourceBatch = String(form.get("sourceBatch") ?? "").trim() || null;
@@ -77,18 +68,8 @@ export async function POST(req: NextRequest) {
     const companyData = companyEntries.length > 0 ? Object.fromEntries(companyEntries) : undefined;
 
     try {
-      const contact = await prisma.contact.create({
+      await prisma.contact.create({
         data: { phone, name, sourceBatch, niche, leadSource, stage: "novo", companyData },
-      });
-
-      await prisma.messageLog.create({
-        data: {
-          contactId: contact.id,
-          direction: "out",
-          templateKey: "inicial",
-          body: renderTemplate(template.bodyText, { nome: name }),
-          status: "queued",
-        },
       });
 
       criados++;

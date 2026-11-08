@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 interface SettingsForm {
   msg1ThresholdMinutes: number;
   msg2ThresholdMinutes: number;
+  newContactsDailyCap: number;
   sendWindowStart: number;
   sendWindowEnd: number;
   minDelaySeconds: number;
@@ -24,6 +25,11 @@ const FIELDS: { key: keyof SettingsForm; label: string; hint: string }[] = [
     key: "msg2ThresholdMinutes",
     label: "Limiar da mensagem 2 / verificação (minutos)",
     hint: "Resposta até esse tempo confirma 'tem IA' (sai do funil). Sem resposta até esse tempo confirma 'não tem IA'.",
+  },
+  {
+    key: "newContactsDailyCap",
+    label: "Limite diário de contatos novos",
+    hint: "Quantos contatos novos (mensagem inicial) no máximo por dia, somando todos os números — independente da capacidade de cada número. Mensagens de verificação, simulação e oferta não entram nesse limite.",
   },
   { key: "sendWindowStart", label: "Início da janela de envio (hora, 0-23)", hint: "" },
   { key: "sendWindowEnd", label: "Fim da janela de envio (hora, 0-23)", hint: "" },

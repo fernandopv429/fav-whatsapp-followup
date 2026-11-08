@@ -17,6 +17,10 @@ function isSameDay(a: Date, b: Date): boolean {
   );
 }
 
+function startOfDay(now: Date): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+}
+
 /** Aplica reset diário de contador e progresso de aquecimento; devolve o número atualizado. */
 async function refreshNumber(number: WhatsappNumber, settings: Settings, now: Date): Promise<WhatsappNumber> {
   const data: Partial<WhatsappNumber> = {};
@@ -198,6 +202,10 @@ export async function tick(): Promise<TickResult> {
   let sent = 0;
   let erros = 0;
 
+  let inicialEnviadosHoje = await prisma.messageLog.count({
+    where: { templateKey: "inicial", status: "sent", sentAt: { gte: startOfDay(now) } },
+  });
+
   for (const raw of numbers) {
     const number = await refreshNumber(raw, settings, now);
 
@@ -210,15 +218,21 @@ export async function tick(): Promise<TickResult> {
       continue;
     }
 
-    const nextMessage = await prisma.messageLog.findFirst({
+    // Olha um pouco além do primeiro da fila: se os próximos forem 'inicial' e o
+    // limite diário de contatos novos já bateu, pula pra verificação/drip/oferta
+    // (essas não contam no limite — são follow-up de gente que já respondeu).
+    const candidates = await prisma.messageLog.findMany({
       where: {
         status: "queued",
         direction: "out",
         OR: [{ numberId: null }, { numberId: number.id }],
       },
       orderBy: { createdAt: "asc" },
+      take: 20,
       include: { contact: true },
     });
+    const inicialCapAtingido = inicialEnviadosHoje >= settings.newContactsDailyCap;
+    const nextMessage = candidates.find((m) => m.templateKey !== "inicial" || !inicialCapAtingido);
     if (!nextMessage) continue;
 
     try {
@@ -256,6 +270,7 @@ export async function tick(): Promise<TickResult> {
       ]);
 
       sent++;
+      if (nextMessage.templateKey === "inicial") inicialEnviadosHoje++;
     } catch (err) {
       erros++;
       console.error(`Falha ao enviar mensagem ${nextMessage.id} via ${number.evolutionInstanceName}:`, err);

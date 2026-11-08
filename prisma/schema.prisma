@@ -134,6 +134,7 @@ model Settings {
   id                      Int      @id @default(1)
   msg1ThresholdMinutes    Int      @default(60)
   msg2ThresholdMinutes    Int      @default(15)
+  newContactsDailyCap     Int      @default(20)
   sendWindowStart         Int      @default(8)
   sendWindowEnd           Int      @default(20)
   minDelaySeconds         Int      @default(45)

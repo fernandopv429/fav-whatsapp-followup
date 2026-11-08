@@ -70,6 +70,8 @@ model Contact {
   phone           String
   name            String?
   sourceBatch     String?
+  niche           String?
+  leadSource      String?
   companyData     Json?
   stage           ContactStage @default(novo)
   assignedNumberId String?

@@ -19,6 +19,7 @@ function getClient(): Anthropic {
 export async function generatePersonalizedOffer(params: {
   promptInstructions: string;
   contactName: string | null;
+  niche: string | null;
   companyData: Record<string, unknown> | null;
 }): Promise<string> {
   const client = getClient();
@@ -33,13 +34,15 @@ export async function generatePersonalizedOffer(params: {
     max_tokens: 400,
     system:
       "Você escreve mensagens de WhatsApp curtas, diretas e personalizadas para prospecção " +
-      "comercial de um escritório de advocacia. Responda SOMENTE com o texto final da mensagem, " +
-      "sem aspas, sem explicações, sem saudação formal genérica — direto o conteúdo que será enviado.",
+      "comercial B2B. Adapte o tom e os termos ao nicho do lead informado. Responda SOMENTE com o " +
+      "texto final da mensagem, sem aspas, sem explicações, sem saudação formal genérica — direto " +
+      "o conteúdo que será enviado.",
     messages: [
       {
         role: "user",
         content:
           `Instruções de como personalizar a mensagem:\n${params.promptInstructions}\n\n` +
+          `Nicho do lead: ${params.niche ?? "(não informado)"}\n` +
           `Nome do contato: ${params.contactName ?? "(desconhecido)"}\n` +
           `Dados da empresa (JSON vindo da planilha, use o que for relevante):\n${dadosEmpresa}`,
       },

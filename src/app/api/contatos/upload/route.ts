@@ -8,7 +8,28 @@ interface CsvRow {
   [key: string]: string;
 }
 
-const RESERVED_KEYS = new Set(["telefone", "phone", "celular", "nome", "name"]);
+const PHONE_COLUMNS = ["telefone", "telefones", "phone", "celular"];
+const NAME_COLUMNS = ["nome fantasia", "razao social", "nome", "name"];
+const RESERVED_KEYS = new Set([...PHONE_COLUMNS, ...NAME_COLUMNS]);
+
+/** Campos de telefone às vezes trazem mais de um número junto (ex: "11-2379,11-4975"); usa o primeiro. */
+function extractPhone(row: Record<string, string>): string | null {
+  for (const col of PHONE_COLUMNS) {
+    const raw = row[col];
+    if (!raw) continue;
+    const first = raw.split(/[,;/]/)[0]?.trim();
+    const normalized = normalizePhoneBR(first ?? "");
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
+function extractName(row: Record<string, string>): string | null {
+  for (const col of NAME_COLUMNS) {
+    if (row[col]) return row[col];
+  }
+  return null;
+}
 
 export async function POST(req: NextRequest) {
   const template = await prisma.messageTemplate.findUnique({ where: { key: "inicial" } });
@@ -22,6 +43,8 @@ export async function POST(req: NextRequest) {
   const form = await req.formData();
   const file = form.get("file");
   const sourceBatch = String(form.get("sourceBatch") ?? "").trim() || null;
+  const niche = String(form.get("niche") ?? "").trim() || null;
+  const leadSource = String(form.get("leadSource") ?? "").trim() || null;
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "Envie um arquivo CSV no campo 'file'." }, { status: 400 });
@@ -40,9 +63,8 @@ export async function POST(req: NextRequest) {
       normalizedRow[k.trim().toLowerCase()] = String(v ?? "").trim();
     }
 
-    const rawPhone = normalizedRow["telefone"] ?? normalizedRow["phone"] ?? normalizedRow["celular"] ?? "";
-    const name = normalizedRow["nome"] ?? normalizedRow["name"] ?? null;
-    const phone = normalizePhoneBR(rawPhone);
+    const phone = extractPhone(normalizedRow);
+    const name = extractName(normalizedRow);
 
     if (!phone) {
       invalidos++;
@@ -56,7 +78,7 @@ export async function POST(req: NextRequest) {
 
     try {
       const contact = await prisma.contact.create({
-        data: { phone, name, sourceBatch, stage: "novo", companyData },
+        data: { phone, name, sourceBatch, niche, leadSource, stage: "novo", companyData },
       });
 
       await prisma.messageLog.create({

@@ -28,6 +28,7 @@ export async function POST(
     body = await generatePersonalizedOffer({
       promptInstructions: promptTemplate.bodyText,
       contactName: contact.name,
+      niche: contact.niche,
       companyData: (contact.companyData as Record<string, unknown> | null) ?? null,
     });
   } catch (err) {

@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 
 interface Contact {
   id: string;
   phone: string;
   name: string | null;
   sourceBatch: string | null;
+  niche: string | null;
+  leadSource: string | null;
   stage: string;
   companyData: Record<string, unknown> | null;
   createdAt: string;
@@ -31,12 +33,15 @@ export default function ContatosPage() {
   const [ofertaPrompt, setOfertaPrompt] = useState("");
   const [ofertaSaved, setOfertaSaved] = useState(true);
   const [sourceBatch, setSourceBatch] = useState("");
+  const [niche, setNiche] = useState("");
+  const [leadSource, setLeadSource] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [qualifyingId, setQualifyingId] = useState<string | null>(null);
   const [qualifyError, setQualifyError] = useState<string | null>(null);
+  const [nicheFilter, setNicheFilter] = useState("todos");
 
   const loadContacts = useCallback(async () => {
     const res = await fetch("/api/contatos");
@@ -53,6 +58,19 @@ export default function ContatosPage() {
       .then((r) => r.json())
       .then((t) => setOfertaPrompt(t?.bodyText ?? ""));
   }, [loadContacts]);
+
+  const knownNiches = useMemo(
+    () => Array.from(new Set(contacts.map((c) => c.niche).filter((v): v is string => Boolean(v)))),
+    [contacts]
+  );
+  const knownSources = useMemo(
+    () => Array.from(new Set(contacts.map((c) => c.leadSource).filter((v): v is string => Boolean(v)))),
+    [contacts]
+  );
+  const visibleContacts = useMemo(
+    () => (nicheFilter === "todos" ? contacts : contacts.filter((c) => c.niche === nicheFilter)),
+    [contacts, nicheFilter]
+  );
 
   async function saveTemplate() {
     await fetch("/api/templates/inicial", {
@@ -82,6 +100,8 @@ export default function ContatosPage() {
       const form = new FormData();
       form.append("file", file);
       form.append("sourceBatch", sourceBatch);
+      form.append("niche", niche);
+      form.append("leadSource", leadSource);
       const res = await fetch("/api/contatos/upload", { method: "POST", body: form });
       const data = await res.json();
       if (!res.ok) {
@@ -147,7 +167,8 @@ export default function ContatosPage() {
         </label>
         <p className="text-xs text-neutral-400">
           Escreva como se estivesse orientando alguém: o que oferecer, tom de voz, o que considerar dos
-          dados da empresa. A IA recebe isso + os dados do CSV daquele contato e devolve o texto final.
+          dados da empresa. A IA recebe isso + os dados do CSV daquele contato (incluindo nicho) e devolve
+          o texto final.
         </p>
         <textarea
           className="w-full rounded border border-neutral-300 px-3 py-2 text-sm"
@@ -170,11 +191,39 @@ export default function ContatosPage() {
       <form onSubmit={handleUpload} className="space-y-3 rounded-lg border border-neutral-200 bg-white p-4">
         <p className="text-sm font-medium text-neutral-700">Subir lista de contatos (CSV)</p>
         <p className="text-sm text-neutral-500">
-          Colunas esperadas: <code>telefone</code> e <code>nome</code> (opcional). Qualquer outra coluna
-          (ex: empresa, segmento, site) é guardada como dado da empresa e fica disponível pra IA usar na
-          mensagem de oferta.
+          Reconhece tanto exportação do Google Maps (<code>Name</code>/<code>Phone</code>) quanto da Casa
+          de Dados (<code>Razao Social</code>/<code>Telefones</code>). Qualquer outra coluna vira dado da
+          empresa, disponível pra IA usar na oferta.
         </p>
-        <div className="flex items-end gap-2">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="space-y-1">
+            <label className="text-sm text-neutral-600">Nicho (ex: advocacia, clinicas)</label>
+            <input
+              list="niches"
+              className="rounded border border-neutral-300 px-3 py-2 text-sm"
+              value={niche}
+              onChange={(e) => setNiche(e.target.value)}
+            />
+            <datalist id="niches">
+              {knownNiches.map((n) => (
+                <option key={n} value={n} />
+              ))}
+            </datalist>
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm text-neutral-600">Fonte (ex: google_maps, casa_de_dados)</label>
+            <input
+              list="sources"
+              className="rounded border border-neutral-300 px-3 py-2 text-sm"
+              value={leadSource}
+              onChange={(e) => setLeadSource(e.target.value)}
+            />
+            <datalist id="sources">
+              {knownSources.map((s) => (
+                <option key={s} value={s} />
+              ))}
+            </datalist>
+          </div>
           <div className="space-y-1">
             <label className="text-sm text-neutral-600">Nome da campanha/lote (opcional)</label>
             <input
@@ -206,34 +255,50 @@ export default function ContatosPage() {
 
       {qualifyError && <p className="text-sm text-red-600">{qualifyError}</p>}
 
+      <div className="flex items-center gap-2">
+        <label className="text-sm text-neutral-600">Filtrar por nicho:</label>
+        <select
+          value={nicheFilter}
+          onChange={(e) => setNicheFilter(e.target.value)}
+          className="rounded border border-neutral-300 px-2 py-1 text-sm"
+        >
+          <option value="todos">Todos</option>
+          {knownNiches.map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+        </select>
+      </div>
+
       <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
         <table className="w-full text-sm">
           <thead className="bg-neutral-50 text-left text-neutral-500">
             <tr>
               <th className="px-4 py-2">Telefone</th>
               <th className="px-4 py-2">Nome</th>
+              <th className="px-4 py-2">Nicho</th>
+              <th className="px-4 py-2">Fonte</th>
               <th className="px-4 py-2">Lote</th>
-              <th className="px-4 py-2">Empresa</th>
               <th className="px-4 py-2">Estágio</th>
               <th className="px-4 py-2">Ações</th>
             </tr>
           </thead>
           <tbody>
-            {contacts.length === 0 && (
+            {visibleContacts.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-neutral-400">
+                <td colSpan={7} className="px-4 py-6 text-center text-neutral-400">
                   Nenhum contato ainda.
                 </td>
               </tr>
             )}
-            {contacts.map((c) => (
+            {visibleContacts.map((c) => (
               <tr key={c.id} className="border-t border-neutral-100">
                 <td className="px-4 py-2">{c.phone}</td>
                 <td className="px-4 py-2">{c.name ?? "—"}</td>
+                <td className="px-4 py-2 text-neutral-500">{c.niche ?? "—"}</td>
+                <td className="px-4 py-2 text-neutral-500">{c.leadSource ?? "—"}</td>
                 <td className="px-4 py-2 text-neutral-500">{c.sourceBatch ?? "—"}</td>
-                <td className="px-4 py-2 text-neutral-500">
-                  {c.companyData ? Object.keys(c.companyData).join(", ") : "—"}
-                </td>
                 <td className="px-4 py-2">{STAGE_LABEL[c.stage] ?? c.stage}</td>
                 <td className="px-4 py-2">
                   <button

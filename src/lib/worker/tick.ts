@@ -312,7 +312,7 @@ export async function tick(): Promise<TickResult> {
             number.evolutionInstanceName,
             nextMessage.contact.phone,
             nextMessage.mediaUrl,
-            (nextMessage.mediaType as "image" | "video") ?? "image",
+            (nextMessage.mediaType as "image" | "video" | "document") ?? "image",
             nextMessage.body,
             number.evolutionInstanceToken ?? undefined
           )

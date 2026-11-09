@@ -144,7 +144,7 @@ export async function sendMedia(
   instanceName: string,
   number: string,
   mediaUrl: string,
-  mediaType: "image" | "video",
+  mediaType: "image" | "video" | "document",
   caption?: string,
   apiKey?: string
 ) {

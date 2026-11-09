@@ -76,6 +76,18 @@ export async function POST(req: NextRequest) {
       .reverse()
       .map((l) => ({ direction: l.direction, body: l.body }));
 
+    // A mídia do passo (ex: um PDF de material) só vai junto na primeira resposta
+    // da IA depois de entrar nesse passo — nas seguintes, só texto.
+    const jaRespondeuNessePasso = await prisma.messageLog.count({
+      where: {
+        contactId: contact.id,
+        direction: "out",
+        templateKey: step.templateKey,
+        createdAt: { gte: contact.stepEnteredAt ?? now },
+      },
+    });
+    const isPrimeiraResposta = jaRespondeuNessePasso === 0;
+
     try {
       const replyBody = await generateAiReply({
         promptInstructions: promptTemplate.bodyText,
@@ -85,18 +97,30 @@ export async function POST(req: NextRequest) {
         history,
       });
 
-      await prisma.messageLog.create({
-        data: {
-          contactId: contact.id,
-          numberId: contact.assignedNumberId,
-          direction: "out",
-          templateKey: step.templateKey,
-          body: replyBody,
-          mediaUrl: step.mediaUrl ?? undefined,
-          mediaType: step.mediaType ?? undefined,
-          status: "queued",
-        },
-      });
+      // A IA é instruída a quebrar respostas longas em várias mensagens
+      // separadas por linha em branco, pra simular alguém digitando várias
+      // mensagens seguidas em vez de mandar um bloco único de texto.
+      const chunks = replyBody
+        .split(/\n\s*\n/)
+        .map((c) => c.trim())
+        .filter(Boolean);
+      if (chunks.length === 0) chunks.push(replyBody.trim());
+
+      for (let i = 0; i < chunks.length; i++) {
+        const attachMedia = i === 0 && isPrimeiraResposta;
+        await prisma.messageLog.create({
+          data: {
+            contactId: contact.id,
+            numberId: contact.assignedNumberId,
+            direction: "out",
+            templateKey: step.templateKey,
+            body: chunks[i],
+            mediaUrl: attachMedia ? (step.mediaUrl ?? undefined) : undefined,
+            mediaType: attachMedia ? (step.mediaType ?? undefined) : undefined,
+            status: "queued",
+          },
+        });
+      }
     } catch (err) {
       console.error(`Falha ao gerar resposta de IA (passo ${step.id}) pro contato ${contact.id}:`, err);
     }

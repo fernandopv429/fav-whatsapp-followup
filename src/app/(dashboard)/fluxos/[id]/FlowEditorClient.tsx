@@ -405,6 +405,7 @@ function MediaFields({
             <option value="">Sem mídia</option>
             <option value="image">Imagem</option>
             <option value="video">Vídeo</option>
+            <option value="document">Documento (PDF)</option>
           </select>
         </div>
         <div className="min-w-[16rem] flex-1 space-y-1">

@@ -47,8 +47,9 @@ export default function ContatosPage() {
   const [iniciarResult, setIniciarResult] = useState<string | null>(null);
   const [iniciarError, setIniciarError] = useState<string | null>(null);
 
-  const loadContacts = useCallback(async () => {
-    const res = await fetch("/api/contatos");
+  const loadContacts = useCallback(async (niche: string) => {
+    const qs = niche === "todos" ? "" : `?niche=${encodeURIComponent(niche)}`;
+    const res = await fetch(`/api/contatos${qs}`);
     if (res.ok) setContacts(await res.json());
   }, []);
 
@@ -68,27 +69,24 @@ export default function ContatosPage() {
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount é intencional aqui
-    loadContacts();
+    loadContacts(nicheFilter);
+  }, [loadContacts, nicheFilter]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount é intencional aqui
     loadResumo();
     loadFlows();
-  }, [loadContacts, loadResumo, loadFlows]);
+  }, [loadResumo, loadFlows]);
 
   const knownNiches = useMemo(
-    () => Array.from(new Set(contacts.map((c) => c.niche).filter((v): v is string => Boolean(v)))),
-    [contacts]
+    () => (resumo?.porNicho.filter((p) => p.niche).map((p) => p.niche as string) ?? []),
+    [resumo]
   );
   const knownSources = useMemo(
     () => Array.from(new Set(contacts.map((c) => c.leadSource).filter((v): v is string => Boolean(v)))),
     [contacts]
   );
-  const visibleContacts = useMemo(
-    () => (nicheFilter === "todos" ? contacts : contacts.filter((c) => c.niche === nicheFilter)),
-    [contacts, nicheFilter]
-  );
-  const nichosParaIniciar = useMemo(
-    () => resumo?.porNicho.filter((p) => p.niche).map((p) => p.niche as string) ?? [],
-    [resumo]
-  );
+  const nichosParaIniciar = knownNiches;
 
   async function handleUpload(e: React.FormEvent) {
     e.preventDefault();
@@ -112,7 +110,7 @@ export default function ContatosPage() {
         `${data.criados} contato(s) adicionado(s) (ainda sem fluxo), ${data.duplicados} já existia(m), ${data.invalidos} inválido(s).`
       );
       setFile(null);
-      loadContacts();
+      loadContacts(nicheFilter);
       loadResumo();
     } finally {
       setUploading(false);
@@ -142,7 +140,7 @@ export default function ContatosPage() {
         return;
       }
       setIniciarResult(`${data.iniciados} contato(s) entraram no fluxo.`);
-      loadContacts();
+      loadContacts(nicheFilter);
       loadResumo();
     } finally {
       setIniciando(false);
@@ -159,7 +157,7 @@ export default function ContatosPage() {
         setQualifyError(`${contact.name ?? contact.phone}: ${data.error ?? "falha ao gerar oferta"}`);
         return;
       }
-      loadContacts();
+      loadContacts(nicheFilter);
     } finally {
       setQualifyingId(null);
     }
@@ -340,7 +338,7 @@ export default function ContatosPage() {
             </option>
           ))}
         </select>
-        <span className="text-xs text-neutral-400">(mostra só os 200 mais recentes)</span>
+        <span className="text-xs text-neutral-400">(mostra os 200 mais recentes desse filtro)</span>
       </div>
 
       <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
@@ -358,14 +356,14 @@ export default function ContatosPage() {
             </tr>
           </thead>
           <tbody>
-            {visibleContacts.length === 0 && (
+            {contacts.length === 0 && (
               <tr>
                 <td colSpan={8} className="px-4 py-6 text-center text-neutral-400">
                   Nenhum contato ainda.
                 </td>
               </tr>
             )}
-            {visibleContacts.map((c) => (
+            {contacts.map((c) => (
               <tr key={c.id} className="border-t border-neutral-100">
                 <td className="px-4 py-2">{c.phone}</td>
                 <td className="px-4 py-2">{c.name ?? "—"}</td>

@@ -12,6 +12,7 @@ interface Contact {
   leadSource: string | null;
   stageLabel: string | null;
   currentFlow: { name: string } | null;
+  currentStep: { type: string } | null;
   companyData: Record<string, unknown> | null;
   createdAt: string;
   aiPaused: boolean;
@@ -405,13 +406,23 @@ export default function ContatosPage() {
                   </button>
                 </td>
                 <td className="px-4 py-2 whitespace-nowrap">
-                  <button
-                    onClick={() => handleQualificar(c)}
-                    disabled={qualifyingId === c.id}
-                    className="text-blue-600 hover:underline disabled:opacity-50"
-                  >
-                    {qualifyingId === c.id ? "Gerando..." : "Gerar oferta IA"}
-                  </button>
+                  {c.currentStep?.type === "ai_offer" ? (
+                    <button
+                      onClick={() => handleQualificar(c)}
+                      disabled={qualifyingId === c.id}
+                      className="text-blue-600 hover:underline disabled:opacity-50"
+                      title="Força o envio da oferta desse passo agora, sem esperar a janela/cap"
+                    >
+                      {qualifyingId === c.id ? "Gerando..." : "Forçar oferta agora"}
+                    </button>
+                  ) : (
+                    <span
+                      className="text-neutral-300"
+                      title="Só disponível quando o contato está parado num passo de oferta por IA"
+                    >
+                      —
+                    </span>
+                  )}
                 </td>
               </tr>
             ))}

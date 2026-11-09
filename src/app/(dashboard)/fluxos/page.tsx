@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 interface FlowRow {
   id: string;
   name: string;
+  paused: boolean;
   _count: { steps: number; contacts: number };
 }
 
@@ -15,6 +16,7 @@ export default function FluxosPage() {
   const [flows, setFlows] = useState<FlowRow[]>([]);
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const load = async () => {
     const res = await fetch("/api/flows");
@@ -25,6 +27,20 @@ export default function FluxosPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount é intencional aqui
     load();
   }, []);
+
+  async function handleTogglePaused(flow: FlowRow) {
+    setTogglingId(flow.id);
+    try {
+      await fetch(`/api/flows/${flow.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paused: !flow.paused }),
+      });
+      setFlows((prev) => prev.map((f) => (f.id === flow.id ? { ...f, paused: !flow.paused } : f)));
+    } finally {
+      setTogglingId(null);
+    }
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -51,7 +67,8 @@ export default function FluxosPage() {
       <p className="text-sm text-neutral-500">
         Cada fluxo é uma sequência de passos (mandar mensagem, esperar resposta, oferta por IA) que um
         contato percorre depois de iniciado. Monte um fluxo pra cada lógica diferente — ex: um funil de
-        qualificação de IA com vários números, e uma cadência simples com um número só.
+        qualificação de IA com vários números, e uma cadência simples com um número só. Pausar um fluxo
+        trava o envio de novas mensagens e o avanço de quem está nele (mensagens já na fila ainda saem).
       </p>
 
       <form onSubmit={handleCreate} className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-4 sm:flex-row sm:items-end">
@@ -73,19 +90,20 @@ export default function FluxosPage() {
       </form>
 
       <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
-        <table className="w-full min-w-[560px] text-sm">
+        <table className="w-full min-w-[680px] text-sm">
           <thead className="bg-neutral-50 text-left text-neutral-500">
             <tr>
               <th className="px-4 py-2">Nome</th>
               <th className="px-4 py-2">Passos</th>
               <th className="px-4 py-2">Contatos nele agora</th>
+              <th className="px-4 py-2">Disparo</th>
               <th className="px-4 py-2">Ações</th>
             </tr>
           </thead>
           <tbody>
             {flows.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-neutral-400">
+                <td colSpan={5} className="px-4 py-6 text-center text-neutral-400">
                   Nenhum fluxo ainda.
                 </td>
               </tr>
@@ -95,6 +113,19 @@ export default function FluxosPage() {
                 <td className="px-4 py-2 font-medium text-neutral-900">{f.name}</td>
                 <td className="px-4 py-2">{f._count.steps}</td>
                 <td className="px-4 py-2">{f._count.contacts}</td>
+                <td className="px-4 py-2">
+                  <button
+                    onClick={() => handleTogglePaused(f)}
+                    disabled={togglingId === f.id}
+                    className={`rounded px-2 py-1 text-xs font-medium disabled:opacity-50 ${
+                      f.paused
+                        ? "bg-amber-100 text-amber-800 hover:bg-amber-200"
+                        : "bg-green-100 text-green-800 hover:bg-green-200"
+                    }`}
+                  >
+                    {togglingId === f.id ? "..." : f.paused ? "Pausado" : "Rodando"}
+                  </button>
+                </td>
                 <td className="px-4 py-2">
                   <Link href={`/fluxos/${f.id}`} className="text-blue-600 hover:underline">
                     Editar passos

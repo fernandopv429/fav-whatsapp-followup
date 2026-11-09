@@ -74,7 +74,7 @@ function isWithinSendWindow(
   return hour >= start && hour < end;
 }
 
-async function resolveNumberId(step: FlowStep, contact: Contact): Promise<string | null> {
+export async function resolveNumberId(step: FlowStep, contact: Contact): Promise<string | null> {
   if (step.numberStrategy === "specific") return step.numberId ?? null;
   if (step.numberStrategy === "rotate") {
     const active = await getActiveNumbersOrdered();
@@ -92,10 +92,12 @@ async function resolveNumberId(step: FlowStep, contact: Contact): Promise<string
 async function advanceDelayBranchTimeouts(stepsById: Map<string, FlowStep>, now: Date): Promise<number> {
   const waiting = await prisma.contact.findMany({
     where: { currentStepId: { not: null }, stepEnteredAt: { not: null } },
+    include: { currentFlow: { select: { paused: true } } },
   });
 
   let count = 0;
   for (const contact of waiting) {
+    if (contact.currentFlow?.paused) continue; // fluxo pausado: não avança ninguém nele
     const step = stepsById.get(contact.currentStepId!);
     if (!step || step.type !== "delay_branch") continue;
 
@@ -136,6 +138,8 @@ async function advanceSendableSteps(
   let advanced = 0;
 
   for (let contact of pending) {
+    if (contact.currentFlow?.paused) continue; // fluxo pausado: não enfileira nada pra ele
+
     for (let hop = 0; hop < MAX_HOPS_PER_CONTACT; hop++) {
       if (!contact.currentStepId) break;
       const step = stepsById.get(contact.currentStepId);

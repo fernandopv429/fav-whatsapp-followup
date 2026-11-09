@@ -67,6 +67,7 @@ model Flow {
   name            String
   sendWindowStart Int?
   sendWindowEnd   Int?
+  paused          Boolean    @default(false)
   steps           FlowStep[]
   contacts        Contact[]
   createdAt       DateTime   @default(now())

@@ -21,7 +21,12 @@ export async function PATCH(
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
 
-  const data: { name?: string; sendWindowStart?: number | null; sendWindowEnd?: number | null } = {};
+  const data: {
+    name?: string;
+    sendWindowStart?: number | null;
+    sendWindowEnd?: number | null;
+    paused?: boolean;
+  } = {};
   if (typeof body.name === "string" && body.name.trim()) data.name = body.name.trim();
   if ("sendWindowStart" in body) {
     data.sendWindowStart = body.sendWindowStart === null ? null : Number(body.sendWindowStart);
@@ -29,6 +34,7 @@ export async function PATCH(
   if ("sendWindowEnd" in body) {
     data.sendWindowEnd = body.sendWindowEnd === null ? null : Number(body.sendWindowEnd);
   }
+  if (typeof body.paused === "boolean") data.paused = body.paused;
 
   const flow = await prisma.flow.update({ where: { id }, data });
   return NextResponse.json(flow);

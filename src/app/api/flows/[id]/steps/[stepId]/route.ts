@@ -19,6 +19,8 @@ export async function PATCH(
     endLabel?: string | null;
     mediaUrl?: string | null;
     mediaType?: string | null;
+    sendWindowStart?: number | null;
+    sendWindowEnd?: number | null;
   };
 
   const step = await prisma.flowStep.update({
@@ -37,6 +39,8 @@ export async function PATCH(
       ...(body.endLabel !== undefined && { endLabel: body.endLabel || null }),
       ...(body.mediaUrl !== undefined && { mediaUrl: body.mediaUrl || null }),
       ...(body.mediaType !== undefined && { mediaType: body.mediaType || null }),
+      ...(body.sendWindowStart !== undefined && { sendWindowStart: body.sendWindowStart }),
+      ...(body.sendWindowEnd !== undefined && { sendWindowEnd: body.sendWindowEnd }),
     },
   });
 

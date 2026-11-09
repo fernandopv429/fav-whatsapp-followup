@@ -20,6 +20,8 @@ export async function POST(
     endLabel?: string | null;
     mediaUrl?: string | null;
     mediaType?: string | null;
+    sendWindowStart?: number | null;
+    sendWindowEnd?: number | null;
   };
 
   if (!body.type) {
@@ -48,6 +50,8 @@ export async function POST(
       endLabel: body.endLabel || null,
       mediaUrl: body.mediaUrl || null,
       mediaType: body.mediaType || null,
+      sendWindowStart: body.sendWindowStart ?? null,
+      sendWindowEnd: body.sendWindowEnd ?? null,
     },
   });
 

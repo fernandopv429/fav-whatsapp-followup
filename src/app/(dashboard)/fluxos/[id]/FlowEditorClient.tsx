@@ -21,6 +21,8 @@ interface FlowStepRow {
   endLabel: string | null;
   mediaUrl: string | null;
   mediaType: string | null;
+  sendWindowStart: number | null;
+  sendWindowEnd: number | null;
 }
 
 interface FlowDetail {
@@ -241,6 +243,7 @@ export default function FlowEditorClient({ flowId }: { flowId: string }) {
               </div>
 
               <MediaFields step={step} onChange={(patch) => updateStep(step.id, patch)} />
+              <StepWindowFields step={step} onChange={(patch) => updateStep(step.id, patch)} />
             </>
           )}
 
@@ -411,6 +414,52 @@ function MediaFields({
             onBlur={(e) => onChange({ mediaUrl: e.target.value || null })}
             placeholder="https://..."
             className="w-full rounded border border-neutral-300 px-3 py-1.5 text-sm"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StepWindowFields({
+  step,
+  onChange,
+}: {
+  step: FlowStepRow;
+  onChange: (patch: Partial<FlowStepRow>) => void;
+}) {
+  return (
+    <div className="rounded border border-neutral-100 bg-neutral-50 p-3 space-y-2">
+      <p className="text-xs font-medium text-neutral-600">
+        Sobrepor a janela de envio do fluxo só pra esse passo (opcional)
+      </p>
+      <div className="flex flex-wrap gap-3">
+        <div className="space-y-1">
+          <label className="text-xs text-neutral-600">Início (hora, 0-23)</label>
+          <input
+            type="number"
+            min={0}
+            max={23}
+            defaultValue={step.sendWindowStart ?? ""}
+            placeholder="janela do fluxo"
+            onBlur={(e) =>
+              onChange({ sendWindowStart: e.target.value === "" ? null : Number(e.target.value) })
+            }
+            className="w-36 rounded border border-neutral-300 px-2 py-1.5 text-sm"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs text-neutral-600">Fim (hora, 0-23)</label>
+          <input
+            type="number"
+            min={0}
+            max={23}
+            defaultValue={step.sendWindowEnd ?? ""}
+            placeholder="janela do fluxo"
+            onBlur={(e) =>
+              onChange({ sendWindowEnd: e.target.value === "" ? null : Number(e.target.value) })
+            }
+            className="w-36 rounded border border-neutral-300 px-2 py-1.5 text-sm"
           />
         </div>
       </div>

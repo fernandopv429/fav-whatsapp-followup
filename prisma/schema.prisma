@@ -87,6 +87,8 @@ model FlowStep {
   nextStepId     String?
   mediaUrl       String?
   mediaType      String?
+  sendWindowStart Int? // nulo = usa a janela do fluxo (ou do padrão global)
+  sendWindowEnd   Int?
 
   // delay_branch
   thresholdMinutes       Int?

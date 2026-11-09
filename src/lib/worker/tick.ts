@@ -57,10 +57,19 @@ async function getActiveNumbersOrdered(): Promise<WhatsappNumber[]> {
   return activeNumbersCache;
 }
 
-/** Janela de envio do fluxo do contato, caindo pro padrão global quando o fluxo não tem a sua própria. */
-function isWithinSendWindow(contact: ContactWithFlow, settings: Settings, now: Date): boolean {
-  const start = contact.currentFlow?.sendWindowStart ?? settings.sendWindowStart;
-  const end = contact.currentFlow?.sendWindowEnd ?? settings.sendWindowEnd;
+/**
+ * Janela de envio efetiva pro passo atual: o passo pode sobrepor a janela do
+ * fluxo (ex: a oferta final de um fluxo noturno rodar de manhã), o fluxo cai
+ * pro padrão global de Settings quando não define a sua própria.
+ */
+function isWithinSendWindow(
+  step: FlowStep,
+  contact: ContactWithFlow,
+  settings: Settings,
+  now: Date
+): boolean {
+  const start = step.sendWindowStart ?? contact.currentFlow?.sendWindowStart ?? settings.sendWindowStart;
+  const end = step.sendWindowEnd ?? contact.currentFlow?.sendWindowEnd ?? settings.sendWindowEnd;
   const hour = now.getHours();
   return hour >= start && hour < end;
 }
@@ -148,7 +157,7 @@ async function advanceSendableSteps(
       if (step.type === "send") {
         const isEntryStep = step.position === 0 && !contact.flowStartedAt;
         if (isEntryStep && novosContatosHoje >= settings.newContactsDailyCap) break; // cap do dia batido
-        if (!isWithinSendWindow(contact, settings, now)) break; // fora da janela de envio do fluxo
+        if (!isWithinSendWindow(step, contact, settings, now)) break; // fora da janela de envio do fluxo
 
         const template = step.templateKey
           ? await prisma.messageTemplate.findUnique({ where: { key: step.templateKey } })
@@ -186,7 +195,7 @@ async function advanceSendableSteps(
       }
 
       if (step.type === "ai_offer") {
-        if (!isWithinSendWindow(contact, settings, now)) break; // fora da janela de envio do fluxo
+        if (!isWithinSendWindow(step, contact, settings, now)) break; // fora da janela de envio do fluxo
 
         const promptTemplate = step.templateKey
           ? await prisma.messageTemplate.findUnique({ where: { key: step.templateKey } })

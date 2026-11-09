@@ -1,49 +1,44 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { renderTemplate } from "@/lib/templates";
 import type { Prisma } from "@prisma/client";
 
 /**
- * Enfileira a mensagem inicial pros contatos `novo` que ainda não foram
- * iniciados (sem nenhum MessageLog com templateKey "inicial"), filtrando
- * opcionalmente por nicho/fonte/lote. Sem filtro = todos os não iniciados.
+ * Atribui um Flow aos contatos ainda sem fluxo (currentFlowId null) que
+ * baterem o filtro opcional de nicho/fonte/lote — sem filtro = todos.
+ * Só aponta pro primeiro passo do fluxo; quem efetivamente manda a mensagem
+ * (e respeita o limite diário de contatos novos) é o worker (tick()).
  */
 export async function POST(req: NextRequest) {
-  const { niche, leadSource, sourceBatch } = (await req.json().catch(() => ({}))) as {
+  const { flowId, niche, leadSource, sourceBatch } = (await req.json().catch(() => ({}))) as {
+    flowId?: string;
     niche?: string | null;
     leadSource?: string | null;
     sourceBatch?: string | null;
   };
 
-  const template = await prisma.messageTemplate.findUnique({ where: { key: "inicial" } });
-  if (!template || !template.bodyText.trim()) {
-    return NextResponse.json(
-      { error: "Defina a mensagem inicial em Mensagens antes de iniciar o disparo." },
-      { status: 400 }
-    );
+  if (!flowId) {
+    return NextResponse.json({ error: "Escolha um fluxo antes de iniciar o disparo." }, { status: 400 });
+  }
+
+  const firstStep = await prisma.flowStep.findFirst({
+    where: { flowId },
+    orderBy: { position: "asc" },
+  });
+  if (!firstStep) {
+    return NextResponse.json({ error: "Esse fluxo ainda não tem nenhum passo." }, { status: 400 });
   }
 
   const where: Prisma.ContactWhereInput = {
-    stage: "novo",
-    messageLogs: { none: { templateKey: "inicial" } },
+    currentFlowId: null,
     ...(niche && { niche }),
     ...(leadSource && { leadSource }),
     ...(sourceBatch && { sourceBatch }),
   };
 
-  const candidates = await prisma.contact.findMany({ where });
+  const { count } = await prisma.contact.updateMany({
+    where,
+    data: { currentFlowId: flowId, currentStepId: firstStep.id, stepEnteredAt: new Date() },
+  });
 
-  for (const contact of candidates) {
-    await prisma.messageLog.create({
-      data: {
-        contactId: contact.id,
-        direction: "out",
-        templateKey: "inicial",
-        body: renderTemplate(template.bodyText, { nome: contact.name }),
-        status: "queued",
-      },
-    });
-  }
-
-  return NextResponse.json({ iniciados: candidates.length });
+  return NextResponse.json({ iniciados: count });
 }

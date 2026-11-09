@@ -5,9 +5,7 @@ export async function GET() {
   const contacts = await prisma.contact.findMany({
     orderBy: { createdAt: "desc" },
     take: 200,
-    include: { messageLogs: { where: { templateKey: "inicial" }, select: { id: true }, take: 1 } },
+    include: { currentFlow: { select: { name: true } } },
   });
-  return NextResponse.json(
-    contacts.map((c) => ({ ...c, started: c.messageLogs.length > 0, messageLogs: undefined }))
-  );
+  return NextResponse.json(contacts);
 }

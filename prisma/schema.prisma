@@ -15,17 +15,6 @@ enum NumberStatus {
   banned
 }
 
-enum ContactStage {
-  novo
-  aguardando_msg1
-  aguardando_msg2
-  tem_ia
-  em_drip
-  oferta_enviada
-  convertido
-  perdido
-}
-
 enum LogDirection {
   out
   in
@@ -38,11 +27,17 @@ enum LogStatus {
   failed
 }
 
-enum DripStatus {
-  ativo
-  pausado
-  concluido
-  convertido
+enum FlowStepType {
+  send
+  delay_branch
+  ai_offer
+  end
+}
+
+enum NumberStrategy {
+  same
+  specific
+  rotate
 }
 
 model WhatsappNumber {
@@ -66,6 +61,45 @@ model WhatsappNumber {
   messageLogs MessageLog[]
 }
 
+model Flow {
+  id        String     @id @default(cuid())
+  name      String
+  steps     FlowStep[]
+  contacts  Contact[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model FlowStep {
+  id             String          @id @default(cuid())
+  flowId         String
+  flow           Flow            @relation(fields: [flowId], references: [id])
+  type           FlowStepType
+  position        Int
+
+  // send / ai_offer
+  templateKey    String?
+  numberStrategy NumberStrategy?
+  numberId       String?
+  nextStepId     String?
+
+  // delay_branch
+  thresholdMinutes       Int?
+  onReplyGotoStepId      String?
+  onReplySendTemplateKey String?
+  onTimeoutGotoStepId    String?
+
+  // end
+  endLabel String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contactsHere Contact[]
+
+  @@index([flowId])
+}
+
 model Contact {
   id              String       @id @default(cuid())
   phone           String
@@ -74,9 +108,18 @@ model Contact {
   niche           String?
   leadSource      String?
   companyData     Json?
-  stage           ContactStage @default(novo)
   assignedNumberId String?
   assignedNumber  WhatsappNumber? @relation(fields: [assignedNumberId], references: [id])
+
+  currentFlowId   String?
+  currentFlow     Flow?        @relation(fields: [currentFlowId], references: [id])
+  currentStepId   String?
+  currentStep     FlowStep?    @relation(fields: [currentStepId], references: [id])
+  stepEnteredAt   DateTime?
+  flowStartedAt   DateTime?
+  rotateIndex     Int          @default(0)
+  stageLabel      String?
+
   initialSentAt   DateTime?
   msg2SentAt      DateTime?
   firstReplyAt    DateTime?
@@ -84,10 +127,9 @@ model Contact {
   updatedAt       DateTime     @updatedAt
 
   messageLogs MessageLog[]
-  dripState   DripState?
 
   @@unique([phone])
-  @@index([stage])
+  @@index([currentStepId])
 }
 
 model MessageTemplate {
@@ -116,24 +158,8 @@ model MessageLog {
   @@index([contactId])
 }
 
-model DripState {
-  id          String     @id @default(cuid())
-  contactId   String     @unique
-  contact     Contact    @relation(fields: [contactId], references: [id])
-  currentDay  Int        @default(0)
-  lastSentAt  DateTime?
-  nextDueAt   DateTime?
-  status      DripStatus @default(ativo)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-
-  @@index([status, nextDueAt])
-}
-
 model Settings {
   id                      Int      @id @default(1)
-  msg1ThresholdMinutes    Int      @default(60)
-  msg2ThresholdMinutes    Int      @default(15)
   newContactsDailyCap     Int      @default(20)
   sendWindowStart         Int      @default(8)
   sendWindowEnd           Int      @default(20)

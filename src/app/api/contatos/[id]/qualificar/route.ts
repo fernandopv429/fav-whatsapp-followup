@@ -46,7 +46,7 @@ export async function POST(
         status: "queued",
       },
     }),
-    prisma.contact.update({ where: { id: contact.id }, data: { stage: "oferta_enviada" } }),
+    prisma.contact.update({ where: { id: contact.id }, data: { stageLabel: "oferta_enviada" } }),
   ]);
 
   return NextResponse.json({ body, contact: updatedContact });

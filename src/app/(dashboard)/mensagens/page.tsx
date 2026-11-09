@@ -1,89 +1,32 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 interface TemplateRow {
   key: string;
   bodyText: string;
 }
 
-interface Slot {
-  key: string;
-  label: string;
-  hint: string;
-  rows: number;
-}
-
-interface NumberRow {
-  id: string;
-  status: "warming_up" | "active" | "paused" | "banned";
-}
-
 export default function MensagensPage() {
-  const [dripTotalDays, setDripTotalDays] = useState<number | null>(null);
+  const [templates, setTemplates] = useState<TemplateRow[]>([]);
   const [values, setValues] = useState<Record<string, string>>({});
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState<string | null>(null);
+  const [newKey, setNewKey] = useState("");
+
+  const load = async () => {
+    const res = await fetch("/api/templates");
+    const data: TemplateRow[] = await res.json();
+    setTemplates(data);
+    const map: Record<string, string> = {};
+    for (const t of data) map[t.key] = t.bodyText;
+    setValues(map);
+  };
 
   useEffect(() => {
-    fetch("/api/numeros")
-      .then((r) => r.json())
-      .then((numbers: NumberRow[]) => {
-        const ativos = numbers.filter((n) => n.status === "active" || n.status === "warming_up");
-        setDripTotalDays(ativos.length);
-      });
-    fetch("/api/templates")
-      .then((r) => r.json())
-      .then((templates: TemplateRow[]) => {
-        const map: Record<string, string> = {};
-        for (const t of templates) map[t.key] = t.bodyText;
-        setValues(map);
-      });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount é intencional aqui
+    load();
   }, []);
-
-  const slots: Slot[] = useMemo(() => {
-    const base: Slot[] = [
-      {
-        key: "inicial",
-        label: "Mensagem inicial (Msg1)",
-        hint: "Primeiro contato — serve pra testar se o lead tem um agente de IA no WhatsApp. Use {{nome}} se quiser.",
-        rows: 4,
-      },
-      {
-        key: "verificacao",
-        label: "Mensagem de verificação (Msg2)",
-        hint: "Só é enviada se a Msg1 for respondida rápido demais (ambíguo entre auto-resposta e IA de verdade) — confirma se é mesmo um agente de IA.",
-        rows: 4,
-      },
-    ];
-
-    if (dripTotalDays) {
-      for (let day = 1; day <= dripTotalDays; day++) {
-        base.push({
-          key: `drip_dia_${day}`,
-          label: `Simulação de cliente perdido — dia ${day}`,
-          hint: `Enviada automaticamente pelo número ${day} (na ordem definida em Números), pros contatos marcados como 'não tem IA'.`,
-          rows: 3,
-        });
-      }
-    }
-
-    base.push({
-      key: "drip_resposta_ocupado",
-      label: "Resposta durante a simulação (genérica)",
-      hint: "Disparada quando o contato responde durante a sequência de cliente perdido — reforça a simulação (ex: 'já marquei com outro'). Pode criar uma versão específica por dia com a chave drip_dia_N_resposta direto na API, se quiser.",
-      rows: 3,
-    });
-
-    base.push({
-      key: "oferta",
-      label: "Instruções da IA para a oferta final",
-      hint: "Não é a mensagem pronta — são instruções pra a IA (Claude) escrever a oferta personalizada, usando os dados da empresa do CSV. Disparada automaticamente ao fim da sequência, ou manualmente pelo botão em Contatos.",
-      rows: 5,
-    });
-
-    return base;
-  }, [dripTotalDays]);
 
   async function save(key: string) {
     setSaving(key);
@@ -94,42 +37,73 @@ export default function MensagensPage() {
         body: JSON.stringify({ bodyText: values[key] ?? "" }),
       });
       setDirty((d) => ({ ...d, [key]: false }));
+      load();
     } finally {
       setSaving(null);
     }
+  }
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    const key = newKey.trim();
+    if (!key) return;
+    setValues((v) => ({ ...v, [key]: "" }));
+    await save(key);
+    setNewKey("");
   }
 
   return (
     <div className="max-w-3xl space-y-6">
       <h1 className="text-lg font-semibold text-neutral-900">Mensagens</h1>
       <p className="text-sm text-neutral-500">
-        Todos os textos usados pelo funil: a mensagem inicial, a verificação de IA, a sequência de
-        simulação de cliente perdido e a oferta final.
-      </p>
-      <p className="text-sm text-neutral-500">
-        A quantidade de dias da simulação abaixo ({dripTotalDays ?? "..."}) é igual à quantidade de
-        números ativos agora — conecte mais números em <strong>Números</strong> pra ter mais dias.
+        Templates de texto usados pelos fluxos — use <code>{"{{nome}}"}</code> pra personalizar. Pra
+        mensagens de oferta por IA, o texto aqui são as instruções pra IA escrever, não a mensagem
+        pronta. Cada passo de um fluxo (em <strong>Fluxos</strong>) escolhe qual template usar pela
+        chave abaixo.
       </p>
 
-      {slots.map((slot) => (
-        <div key={slot.key} className="space-y-2 rounded-lg border border-neutral-200 bg-white p-4">
-          <label className="text-sm font-medium text-neutral-700">{slot.label}</label>
-          <p className="text-xs text-neutral-400">{slot.hint}</p>
+      <form onSubmit={handleCreate} className="flex items-end gap-2 rounded-lg border border-neutral-200 bg-white p-4">
+        <div className="flex-1 space-y-1">
+          <label className="text-sm text-neutral-600">Nova chave de template (ex: inicial, oferta, dia3)</label>
+          <input
+            className="w-full rounded border border-neutral-300 px-3 py-2 text-sm"
+            value={newKey}
+            onChange={(e) => setNewKey(e.target.value)}
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={!newKey.trim()}
+          className="rounded bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        >
+          Criar template
+        </button>
+      </form>
+
+      {templates.length === 0 && (
+        <p className="text-sm text-neutral-400">Nenhum template ainda — crie o primeiro acima.</p>
+      )}
+
+      {templates.map((t) => (
+        <div key={t.key} className="space-y-2 rounded-lg border border-neutral-200 bg-white p-4">
+          <label className="text-sm font-medium text-neutral-700">
+            <code>{t.key}</code>
+          </label>
           <textarea
             className="w-full rounded border border-neutral-300 px-3 py-2 text-sm"
-            rows={slot.rows}
-            value={values[slot.key] ?? ""}
+            rows={4}
+            value={values[t.key] ?? ""}
             onChange={(e) => {
-              setValues((v) => ({ ...v, [slot.key]: e.target.value }));
-              setDirty((d) => ({ ...d, [slot.key]: true }));
+              setValues((v) => ({ ...v, [t.key]: e.target.value }));
+              setDirty((d) => ({ ...d, [t.key]: true }));
             }}
           />
           <button
-            onClick={() => save(slot.key)}
-            disabled={!dirty[slot.key] || saving === slot.key}
+            onClick={() => save(t.key)}
+            disabled={!dirty[t.key] || saving === t.key}
             className="rounded bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
-            {saving === slot.key ? "Salvando..." : dirty[slot.key] ? "Salvar" : "Salvo"}
+            {saving === t.key ? "Salvando..." : dirty[t.key] ? "Salvar" : "Salvo"}
           </button>
         </div>
       ))}

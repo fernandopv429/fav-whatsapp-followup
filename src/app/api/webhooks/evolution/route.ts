@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizePhoneBR } from "@/lib/phone";
-import { getSettings } from "@/lib/settings";
 
 interface EvolutionWebhookBody {
   event?: string;
@@ -49,83 +48,41 @@ export async function POST(req: NextRequest) {
     data: { contactId: contact.id, direction: "in", body: text, status: "delivered" },
   });
 
-  const settings = await getSettings();
-
-  if (contact.stage === "aguardando_msg1" && contact.initialSentAt) {
-    const elapsedMin = (now.getTime() - contact.initialSentAt.getTime()) / 60000;
-
-    if (elapsedMin <= settings.msg1ThresholdMinutes) {
-      const verificacao = await prisma.messageTemplate.findUnique({ where: { key: "verificacao" } });
-      await prisma.$transaction([
-        prisma.contact.update({
-          where: { id: contact.id },
-          data: { stage: "aguardando_msg2", firstReplyAt: contact.firstReplyAt ?? now },
-        }),
-        ...(verificacao?.bodyText.trim()
-          ? [
-              prisma.messageLog.create({
-                data: {
-                  contactId: contact.id,
-                  numberId: contact.assignedNumberId,
-                  direction: "out",
-                  templateKey: "verificacao",
-                  body: verificacao.bodyText,
-                  status: "queued",
-                },
-              }),
-            ]
-          : []),
-      ]);
-    } else {
-      await enterDrip(contact.id);
-    }
-    return NextResponse.json({ ok: true });
+  if (!contact.firstReplyAt) {
+    await prisma.contact.update({ where: { id: contact.id }, data: { firstReplyAt: now } });
   }
 
-  if (contact.stage === "aguardando_msg2" && contact.msg2SentAt) {
-    const elapsedMin = (now.getTime() - contact.msg2SentAt.getTime()) / 60000;
+  if (!contact.currentStepId) return NextResponse.json({ ok: true }); // fluxo já encerrado, só loga
 
-    if (elapsedMin <= settings.msg2ThresholdMinutes) {
-      await prisma.contact.update({ where: { id: contact.id }, data: { stage: "tem_ia" } });
-    } else {
-      await enterDrip(contact.id);
-    }
-    return NextResponse.json({ ok: true });
-  }
+  const step = await prisma.flowStep.findUnique({ where: { id: contact.currentStepId } });
+  if (!step || step.type !== "delay_branch") return NextResponse.json({ ok: true }); // não está esperando resposta agora
 
-  if (contact.stage === "em_drip") {
-    const dripState = await prisma.dripState.findUnique({ where: { contactId: contact.id } });
-    const dayKey = `drip_dia_${dripState?.currentDay ?? 0}_resposta`;
-    const specific = await prisma.messageTemplate.findUnique({ where: { key: dayKey } });
-    const fallback = specific ?? (await prisma.messageTemplate.findUnique({ where: { key: "drip_resposta_ocupado" } }));
+  const sendTemplate = step.onReplySendTemplateKey
+    ? await prisma.messageTemplate.findUnique({ where: { key: step.onReplySendTemplateKey } })
+    : null;
 
-    if (fallback?.bodyText.trim()) {
-      await prisma.messageLog.create({
-        data: {
-          contactId: contact.id,
-          numberId: contact.assignedNumberId,
-          direction: "out",
-          templateKey: specific ? dayKey : "drip_resposta_ocupado",
-          body: fallback.bodyText,
-          status: "queued",
-        },
-      });
-    }
-    return NextResponse.json({ ok: true });
+  // Condição no where evita processar duas vezes a mesma transição se duas
+  // mensagens do mesmo contato chegarem quase juntas (updateMany só afeta
+  // quem ainda estiver nesse passo exato).
+  const { count } = await prisma.contact.updateMany({
+    where: { id: contact.id, currentStepId: step.id },
+    data: step.onReplyGotoStepId
+      ? { currentStepId: step.onReplyGotoStepId, stepEnteredAt: now }
+      : {},
+  });
+
+  if (count > 0 && sendTemplate?.bodyText.trim()) {
+    await prisma.messageLog.create({
+      data: {
+        contactId: contact.id,
+        numberId: contact.assignedNumberId,
+        direction: "out",
+        templateKey: step.onReplySendTemplateKey,
+        body: sendTemplate.bodyText,
+        status: "queued",
+      },
+    });
   }
 
   return NextResponse.json({ ok: true });
-}
-
-/** Marca o contato como "não tem IA" e inicia a sequência de cliente perdido. */
-async function enterDrip(contactId: string) {
-  const now = new Date();
-  await prisma.$transaction([
-    prisma.contact.update({ where: { id: contactId }, data: { stage: "em_drip" } }),
-    prisma.dripState.upsert({
-      where: { contactId },
-      create: { contactId, currentDay: 0, status: "ativo", nextDueAt: now },
-      update: { status: "ativo", nextDueAt: now },
-    }),
-  ]);
 }

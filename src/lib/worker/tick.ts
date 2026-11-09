@@ -2,8 +2,11 @@ import { prisma } from "@/lib/prisma";
 import { getSettings } from "@/lib/settings";
 import { sendText } from "@/lib/evolution";
 import { generatePersonalizedOffer } from "@/lib/ai";
+import { renderTemplate } from "@/lib/templates";
 import { computeWarmupProgress } from "@/lib/worker/warmup";
-import type { Contact, Settings, WhatsappNumber } from "@prisma/client";
+import type { Contact, FlowStep, Settings, WhatsappNumber } from "@prisma/client";
+
+const MAX_HOPS_PER_CONTACT = 10;
 
 function randomInt(min: number, max: number): number {
   return Math.floor(min + Math.random() * (max - min + 1));
@@ -37,144 +40,192 @@ async function refreshNumber(number: WhatsappNumber, settings: Settings, now: Da
   return prisma.whatsappNumber.update({ where: { id: number.id }, data });
 }
 
-/** Campos do Contact a atualizar depois de um envio bem-sucedido, conforme o template. */
-function postSendContactData(templateKey: string | null, now: Date) {
-  if (templateKey === "inicial") {
-    return { stage: "aguardando_msg1" as const, initialSentAt: now };
-  }
-  if (templateKey === "verificacao") {
-    return { stage: "aguardando_msg2" as const, msg2SentAt: now };
-  }
-  // drip_dia_N, drip_resposta_ocupado, oferta: quem enfileirou já ajustou o stage.
-  return {};
+async function loadAllSteps(): Promise<Map<string, FlowStep>> {
+  const steps = await prisma.flowStep.findMany();
+  return new Map(steps.map((s) => [s.id, s]));
 }
 
-/** Marca "não tem IA" quem nunca respondeu dentro do limiar de msg1/msg2. */
-async function advanceTimeouts(settings: Settings, now: Date): Promise<number> {
-  const msg1Deadline = new Date(now.getTime() - settings.msg1ThresholdMinutes * 60000);
-  const msg2Deadline = new Date(now.getTime() - settings.msg2ThresholdMinutes * 60000);
-
-  const expired = await prisma.contact.findMany({
-    where: {
-      OR: [
-        { stage: "aguardando_msg1", initialSentAt: { lte: msg1Deadline } },
-        { stage: "aguardando_msg2", msg2SentAt: { lte: msg2Deadline } },
-      ],
-    },
-  });
-
-  for (const contact of expired) {
-    await prisma.$transaction([
-      prisma.contact.update({ where: { id: contact.id }, data: { stage: "em_drip" } }),
-      prisma.dripState.upsert({
-        where: { contactId: contact.id },
-        create: { contactId: contact.id, currentDay: 0, status: "ativo", nextDueAt: now },
-        update: { status: "ativo", nextDueAt: now },
-      }),
-    ]);
-  }
-
-  return expired.length;
-}
-
-/**
- * Envia a próxima mensagem do drip, ou dispara a oferta final quando a sequência
- * termina. Cada "dia" da simulação usa um número diferente (reforça a ilusão de
- * vários leads distintos) — a quantidade de dias é dinâmica: igual à quantidade
- * de números ativos no momento, na ordem que o usuário definiu em Números.
- */
-async function advanceDrip(now: Date): Promise<number> {
-  const activeNumbers = await prisma.whatsappNumber.findMany({
+let activeNumbersCache: WhatsappNumber[] | null = null;
+async function getActiveNumbersOrdered(): Promise<WhatsappNumber[]> {
+  if (activeNumbersCache) return activeNumbersCache;
+  activeNumbersCache = await prisma.whatsappNumber.findMany({
     where: { status: { in: ["warming_up", "active"] } },
     orderBy: [{ order: "asc" }, { createdAt: "asc" }],
   });
-  const totalDays = activeNumbers.length;
+  return activeNumbersCache;
+}
 
-  const due = await prisma.dripState.findMany({
-    where: { status: "ativo", nextDueAt: { lte: now } },
-    include: { contact: true },
+async function resolveNumberId(step: FlowStep, contact: Contact): Promise<string | null> {
+  if (step.numberStrategy === "specific") return step.numberId ?? null;
+  if (step.numberStrategy === "rotate") {
+    const active = await getActiveNumbersOrdered();
+    if (active.length === 0) return null;
+    return active[contact.rotateIndex % active.length].id;
+  }
+  return contact.assignedNumberId ?? null; // "same" (default)
+}
+
+/**
+ * Marca "sem resposta" quem está parado num passo `delay_branch` há mais
+ * tempo que o limiar configurado nesse passo, sem ninguém ter respondido
+ * (o webhook já trata a resposta em si, fora daqui).
+ */
+async function advanceDelayBranchTimeouts(stepsById: Map<string, FlowStep>, now: Date): Promise<number> {
+  const waiting = await prisma.contact.findMany({
+    where: { currentStepId: { not: null }, stepEnteredAt: { not: null } },
+  });
+
+  let count = 0;
+  for (const contact of waiting) {
+    const step = stepsById.get(contact.currentStepId!);
+    if (!step || step.type !== "delay_branch") continue;
+
+    const thresholdMs = (step.thresholdMinutes ?? 0) * 60000;
+    if (now.getTime() - contact.stepEnteredAt!.getTime() < thresholdMs) continue;
+    if (!step.onTimeoutGotoStepId) continue; // passo mal configurado: não trava, só não avança
+
+    await prisma.contact.update({
+      where: { id: contact.id },
+      data: { currentStepId: step.onTimeoutGotoStepId, stepEnteredAt: now },
+    });
+    count++;
+  }
+  return count;
+}
+
+/**
+ * Processa contatos parados num passo `send` ou `ai_offer`: enfileira a
+ * mensagem e avança pro próximo passo. Encadeia até MAX_HOPS_PER_CONTACT
+ * passos seguidos no mesmo tick (só pra pelo caso de dois `send` seguidos
+ * sem `delay_branch` entre eles) — pára sozinho ao chegar num `delay_branch`
+ * ou `end`.
+ */
+async function advanceSendableSteps(
+  stepsById: Map<string, FlowStep>,
+  settings: Settings,
+  now: Date
+): Promise<number> {
+  const pending = await prisma.contact.findMany({ where: { currentStepId: { not: null } } });
+
+  let novosContatosHoje = await prisma.contact.count({
+    where: { flowStartedAt: { gte: startOfDay(now) } },
   });
 
   let advanced = 0;
 
-  for (const drip of due) {
-    if (totalDays === 0) continue; // nenhum número conectado ainda: tenta de novo no próximo tick
+  for (let contact of pending) {
+    for (let hop = 0; hop < MAX_HOPS_PER_CONTACT; hop++) {
+      if (!contact.currentStepId) break;
+      const step = stepsById.get(contact.currentStepId);
+      if (!step) break;
 
-    if (drip.currentDay >= totalDays) {
-      await finalizarComOferta(drip.contact);
-      advanced++;
-      continue;
+      if (step.type === "delay_branch") break; // espera resposta/timeout
+
+      if (step.type === "end") {
+        contact = await prisma.contact.update({
+          where: { id: contact.id },
+          data: { stageLabel: step.endLabel ?? null, currentStepId: null, currentFlowId: null },
+        });
+        advanced++;
+        break;
+      }
+
+      if (step.type === "send") {
+        const isEntryStep = step.position === 0 && !contact.flowStartedAt;
+        if (isEntryStep && novosContatosHoje >= settings.newContactsDailyCap) break; // cap do dia batido
+
+        const template = step.templateKey
+          ? await prisma.messageTemplate.findUnique({ where: { key: step.templateKey } })
+          : null;
+        if (template?.bodyText.trim()) {
+          const numberId = await resolveNumberId(step, contact);
+          await prisma.messageLog.create({
+            data: {
+              contactId: contact.id,
+              numberId: numberId ?? undefined,
+              direction: "out",
+              templateKey: step.templateKey,
+              body: renderTemplate(template.bodyText, { nome: contact.name }),
+              status: "queued",
+            },
+          });
+        }
+
+        contact = await prisma.contact.update({
+          where: { id: contact.id },
+          data: {
+            currentStepId: step.nextStepId ?? null,
+            stepEnteredAt: now,
+            stageLabel: step.templateKey ?? "send",
+            ...(step.numberStrategy === "rotate" && { rotateIndex: { increment: 1 } }),
+            ...(isEntryStep && { flowStartedAt: now }),
+          },
+        });
+        if (isEntryStep) novosContatosHoje++;
+        advanced++;
+        continue;
+      }
+
+      if (step.type === "ai_offer") {
+        const promptTemplate = step.templateKey
+          ? await prisma.messageTemplate.findUnique({ where: { key: step.templateKey } })
+          : null;
+        if (!promptTemplate?.bodyText.trim()) {
+          contact = await prisma.contact.update({
+            where: { id: contact.id },
+            data: { currentStepId: step.nextStepId ?? null, stepEnteredAt: now },
+          });
+          advanced++;
+          continue;
+        }
+
+        try {
+          const body = await generatePersonalizedOffer({
+            promptInstructions: promptTemplate.bodyText,
+            contactName: contact.name,
+            niche: contact.niche,
+            companyData: (contact.companyData as Record<string, unknown> | null) ?? null,
+          });
+          const numberId = await resolveNumberId(step, contact);
+
+          contact = await prisma.contact.update({
+            where: { id: contact.id },
+            data: {
+              currentStepId: step.nextStepId ?? null,
+              stepEnteredAt: now,
+              stageLabel: "oferta_enviada",
+              ...(step.numberStrategy === "rotate" && { rotateIndex: { increment: 1 } }),
+            },
+          });
+          await prisma.messageLog.create({
+            data: {
+              contactId: contact.id,
+              numberId: numberId ?? undefined,
+              direction: "out",
+              templateKey: step.templateKey,
+              body,
+              status: "queued",
+            },
+          });
+          advanced++;
+          continue;
+        } catch (err) {
+          console.error(`Falha ao gerar oferta (passo ${step.id}) pro contato ${contact.id}:`, err);
+          break; // tenta de novo no próximo tick
+        }
+      }
+
+      break; // tipo desconhecido: não trava o worker
     }
-
-    const nextDay = drip.currentDay + 1;
-    const numberForDay = activeNumbers[drip.currentDay]; // dia 1 = índice 0
-    const template = await prisma.messageTemplate.findUnique({ where: { key: `drip_dia_${nextDay}` } });
-    if (!template?.bodyText.trim()) {
-      // sem template pra esse dia: pula o envio mas avança o dia mesmo assim,
-      // pra não travar a sequência indefinidamente.
-      await prisma.dripState.update({
-        where: { id: drip.id },
-        data: { currentDay: nextDay, lastSentAt: now, nextDueAt: new Date(now.getTime() + 86400000) },
-      });
-      advanced++;
-      continue;
-    }
-
-    await prisma.$transaction([
-      prisma.messageLog.create({
-        data: {
-          contactId: drip.contactId,
-          numberId: numberForDay.id,
-          direction: "out",
-          templateKey: `drip_dia_${nextDay}`,
-          body: template.bodyText,
-          status: "queued",
-        },
-      }),
-      prisma.dripState.update({
-        where: { id: drip.id },
-        data: { currentDay: nextDay, lastSentAt: now, nextDueAt: new Date(now.getTime() + 86400000) },
-      }),
-    ]);
-    advanced++;
   }
 
   return advanced;
 }
 
-async function finalizarComOferta(contact: Contact) {
-  const promptTemplate = await prisma.messageTemplate.findUnique({ where: { key: "oferta" } });
-  if (!promptTemplate?.bodyText.trim()) {
-    // sem prompt de oferta configurado: só fecha a sequência, sem travar o contato.
-    await prisma.dripState.update({ where: { contactId: contact.id }, data: { status: "concluido" } });
-    return;
-  }
-
-  try {
-    const body = await generatePersonalizedOffer({
-      promptInstructions: promptTemplate.bodyText,
-      contactName: contact.name,
-      niche: contact.niche,
-      companyData: (contact.companyData as Record<string, unknown> | null) ?? null,
-    });
-
-    await prisma.$transaction([
-      prisma.messageLog.create({
-        data: { contactId: contact.id, direction: "out", templateKey: "oferta", body, status: "queued" },
-      }),
-      prisma.dripState.update({ where: { contactId: contact.id }, data: { status: "concluido" } }),
-      prisma.contact.update({ where: { id: contact.id }, data: { stage: "oferta_enviada" } }),
-    ]);
-  } catch (err) {
-    console.error(`Falha ao gerar oferta automática pro contato ${contact.id}:`, err);
-    // não marca concluido: tenta de novo no próximo tick (nextDueAt já passou).
-  }
-}
-
 export interface TickResult {
   sent: number;
   timeouts: number;
-  dripAdvances: number;
+  stepsAdvanced: number;
   skippedForaDaJanela?: boolean;
   erros: number;
 }
@@ -186,13 +237,15 @@ export interface TickResult {
 export async function tick(): Promise<TickResult> {
   const settings = await getSettings();
   const now = new Date();
+  activeNumbersCache = null; // um fetch por tick, não por contato
 
-  const timeouts = await advanceTimeouts(settings, now);
-  const dripAdvances = await advanceDrip(now);
+  const stepsById = await loadAllSteps();
+  const timeouts = await advanceDelayBranchTimeouts(stepsById, now);
+  const stepsAdvanced = await advanceSendableSteps(stepsById, settings, now);
 
   const hour = now.getHours();
   if (hour < settings.sendWindowStart || hour >= settings.sendWindowEnd) {
-    return { sent: 0, timeouts, dripAdvances, skippedForaDaJanela: true, erros: 0 };
+    return { sent: 0, timeouts, stepsAdvanced, skippedForaDaJanela: true, erros: 0 };
   }
 
   const numbers = await prisma.whatsappNumber.findMany({
@@ -201,10 +254,6 @@ export async function tick(): Promise<TickResult> {
 
   let sent = 0;
   let erros = 0;
-
-  let inicialEnviadosHoje = await prisma.messageLog.count({
-    where: { templateKey: "inicial", status: "sent", sentAt: { gte: startOfDay(now) } },
-  });
 
   for (const raw of numbers) {
     const number = await refreshNumber(raw, settings, now);
@@ -218,21 +267,15 @@ export async function tick(): Promise<TickResult> {
       continue;
     }
 
-    // Olha um pouco além do primeiro da fila: se os próximos forem 'inicial' e o
-    // limite diário de contatos novos já bateu, pula pra verificação/drip/oferta
-    // (essas não contam no limite — são follow-up de gente que já respondeu).
-    const candidates = await prisma.messageLog.findMany({
+    const nextMessage = await prisma.messageLog.findFirst({
       where: {
         status: "queued",
         direction: "out",
         OR: [{ numberId: null }, { numberId: number.id }],
       },
       orderBy: { createdAt: "asc" },
-      take: 20,
       include: { contact: true },
     });
-    const inicialCapAtingido = inicialEnviadosHoje >= settings.newContactsDailyCap;
-    const nextMessage = candidates.find((m) => m.templateKey !== "inicial" || !inicialCapAtingido);
     if (!nextMessage) continue;
 
     try {
@@ -265,12 +308,11 @@ export async function tick(): Promise<TickResult> {
         }),
         prisma.contact.update({
           where: { id: nextMessage.contactId },
-          data: { assignedNumberId: number.id, ...postSendContactData(nextMessage.templateKey, now) },
+          data: { assignedNumberId: number.id },
         }),
       ]);
 
       sent++;
-      if (nextMessage.templateKey === "inicial") inicialEnviadosHoje++;
     } catch (err) {
       erros++;
       console.error(`Falha ao enviar mensagem ${nextMessage.id} via ${number.evolutionInstanceName}:`, err);
@@ -278,5 +320,5 @@ export async function tick(): Promise<TickResult> {
     }
   }
 
-  return { sent, timeouts, dripAdvances, erros };
+  return { sent, timeouts, stepsAdvanced, erros };
 }

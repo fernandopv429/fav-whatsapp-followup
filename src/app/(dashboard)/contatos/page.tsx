@@ -10,8 +10,8 @@ interface Contact {
   sourceBatch: string | null;
   niche: string | null;
   leadSource: string | null;
-  stage: string;
-  started: boolean;
+  stageLabel: string | null;
+  currentFlow: { name: string } | null;
   companyData: Record<string, unknown> | null;
   createdAt: string;
 }
@@ -22,20 +22,15 @@ interface Resumo {
   porNicho: { niche: string | null; total: number; pendentes: number }[];
 }
 
-const STAGE_LABEL: Record<string, string> = {
-  novo: "Novo",
-  aguardando_msg1: "Aguardando resposta (msg 1)",
-  aguardando_msg2: "Verificando IA (msg 2)",
-  tem_ia: "Tem IA (fora do funil)",
-  em_drip: "Simulação de cliente perdido",
-  oferta_enviada: "Oferta enviada",
-  convertido: "Convertido",
-  perdido: "Perdido",
-};
+interface FlowRow {
+  id: string;
+  name: string;
+}
 
 export default function ContatosPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [resumo, setResumo] = useState<Resumo | null>(null);
+  const [flows, setFlows] = useState<FlowRow[]>([]);
   const [sourceBatch, setSourceBatch] = useState("");
   const [niche, setNiche] = useState("");
   const [leadSource, setLeadSource] = useState("");
@@ -47,6 +42,7 @@ export default function ContatosPage() {
   const [qualifyError, setQualifyError] = useState<string | null>(null);
   const [nicheFilter, setNicheFilter] = useState("todos");
   const [iniciarNicho, setIniciarNicho] = useState("todos");
+  const [iniciarFlowId, setIniciarFlowId] = useState("");
   const [iniciando, setIniciando] = useState(false);
   const [iniciarResult, setIniciarResult] = useState<string | null>(null);
   const [iniciarError, setIniciarError] = useState<string | null>(null);
@@ -61,11 +57,21 @@ export default function ContatosPage() {
     if (res.ok) setResumo(await res.json());
   }, []);
 
+  const loadFlows = useCallback(async () => {
+    const res = await fetch("/api/flows");
+    if (res.ok) {
+      const data: FlowRow[] = await res.json();
+      setFlows(data);
+      setIniciarFlowId((current) => current || data[0]?.id || "");
+    }
+  }, []);
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount é intencional aqui
     loadContacts();
     loadResumo();
-  }, [loadContacts, loadResumo]);
+    loadFlows();
+  }, [loadContacts, loadResumo, loadFlows]);
 
   const knownNiches = useMemo(
     () => Array.from(new Set(contacts.map((c) => c.niche).filter((v): v is string => Boolean(v)))),
@@ -103,7 +109,7 @@ export default function ContatosPage() {
         return;
       }
       setUploadResult(
-        `${data.criados} contato(s) adicionado(s) (ainda não iniciados), ${data.duplicados} já existia(m), ${data.invalidos} inválido(s).`
+        `${data.criados} contato(s) adicionado(s) (ainda sem fluxo), ${data.duplicados} já existia(m), ${data.invalidos} inválido(s).`
       );
       setFile(null);
       loadContacts();
@@ -114,6 +120,10 @@ export default function ContatosPage() {
   }
 
   async function handleIniciar() {
+    if (!iniciarFlowId) {
+      setIniciarError("Crie um fluxo em Fluxos antes de iniciar o disparo.");
+      return;
+    }
     setIniciando(true);
     setIniciarError(null);
     setIniciarResult(null);
@@ -121,14 +131,17 @@ export default function ContatosPage() {
       const res = await fetch("/api/contatos/iniciar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ niche: iniciarNicho === "todos" ? undefined : iniciarNicho }),
+        body: JSON.stringify({
+          flowId: iniciarFlowId,
+          niche: iniciarNicho === "todos" ? undefined : iniciarNicho,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
         setIniciarError(data.error ?? "Falha ao iniciar o disparo.");
         return;
       }
-      setIniciarResult(`${data.iniciados} contato(s) entraram na fila de envio.`);
+      setIniciarResult(`${data.iniciados} contato(s) entraram no fluxo.`);
       loadContacts();
       loadResumo();
     } finally {
@@ -157,9 +170,13 @@ export default function ContatosPage() {
       <h1 className="text-lg font-semibold text-neutral-900">Contatos</h1>
 
       <p className="text-sm text-neutral-500">
-        A mensagem inicial, a de verificação e as da simulação de cliente perdido ficam em{" "}
+        Os templates de mensagem ficam em{" "}
         <Link href="/mensagens" className="text-blue-600 hover:underline">
           Mensagens
+        </Link>
+        , e a sequência de passos de cada fluxo fica em{" "}
+        <Link href="/fluxos" className="text-blue-600 hover:underline">
+          Fluxos
         </Link>
         .
       </p>
@@ -170,7 +187,7 @@ export default function ContatosPage() {
           Reconhece tanto exportação do Google Maps (<code>Name</code>/<code>Phone</code>) quanto da Casa
           de Dados (<code>Razao Social</code>/<code>Telefones</code>). Qualquer outra coluna vira dado da
           empresa, disponível pra IA usar na oferta. Subir a lista <strong>não dispara nada</strong> —
-          os contatos ficam parados até você iniciar o disparo deles (abaixo).
+          os contatos ficam sem fluxo até você iniciar o disparo deles (abaixo).
         </p>
         <div className="flex flex-wrap items-end gap-2">
           <div className="space-y-1">
@@ -233,8 +250,9 @@ export default function ContatosPage() {
       <div className="space-y-3 rounded-lg border border-neutral-200 bg-white p-4">
         <p className="text-sm font-medium text-neutral-700">Iniciar disparo</p>
         <p className="text-sm text-neutral-500">
-          Escolha um nicho (ou todos) pra enfileirar a mensagem inicial só de quem ainda não foi
-          iniciado. Pode rodar quantas vezes quiser — nunca duplica quem já foi iniciado antes.
+          Escolha o fluxo e, se quiser, um nicho específico (ou todos) pra atribuir esse fluxo só de
+          quem ainda não tem nenhum. Pode rodar quantas vezes quiser — nunca reatribui quem já está
+          num fluxo.
         </p>
 
         {resumo && (
@@ -243,7 +261,7 @@ export default function ContatosPage() {
               <strong className="text-neutral-900">{resumo.totalGeral}</strong> contatos no total
             </span>
             <span>
-              <strong className="text-neutral-900">{resumo.pendentesGeral}</strong> ainda não iniciados
+              <strong className="text-neutral-900">{resumo.pendentesGeral}</strong> ainda sem fluxo
             </span>
             {resumo.porNicho.map((p) => (
               <span key={p.niche ?? "sem-nicho"}>
@@ -254,7 +272,22 @@ export default function ContatosPage() {
           </div>
         )}
 
-        <div className="flex items-end gap-2">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="space-y-1">
+            <label className="text-sm text-neutral-600">Fluxo</label>
+            <select
+              value={iniciarFlowId}
+              onChange={(e) => setIniciarFlowId(e.target.value)}
+              className="rounded border border-neutral-300 px-3 py-2 text-sm"
+            >
+              {flows.length === 0 && <option value="">Nenhum fluxo criado ainda</option>}
+              {flows.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="space-y-1">
             <label className="text-sm text-neutral-600">Nicho</label>
             <select
@@ -272,12 +305,21 @@ export default function ContatosPage() {
           </div>
           <button
             onClick={handleIniciar}
-            disabled={iniciando}
+            disabled={iniciando || !flows.length}
             className="rounded bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
             {iniciando ? "Iniciando..." : "Iniciar disparo"}
           </button>
         </div>
+        {flows.length === 0 && (
+          <p className="text-sm text-amber-600">
+            Nenhum fluxo criado ainda —{" "}
+            <Link href="/fluxos" className="underline">
+              crie um em Fluxos
+            </Link>{" "}
+            primeiro.
+          </p>
+        )}
         {iniciarResult && <p className="text-sm text-green-700">{iniciarResult}</p>}
         {iniciarError && <p className="text-sm text-red-600">{iniciarError}</p>}
       </div>
@@ -310,7 +352,7 @@ export default function ContatosPage() {
               <th className="px-4 py-2">Nicho</th>
               <th className="px-4 py-2">Fonte</th>
               <th className="px-4 py-2">Lote</th>
-              <th className="px-4 py-2">Iniciado?</th>
+              <th className="px-4 py-2">Fluxo</th>
               <th className="px-4 py-2">Estágio</th>
               <th className="px-4 py-2">Ações</th>
             </tr>
@@ -330,8 +372,8 @@ export default function ContatosPage() {
                 <td className="px-4 py-2 text-neutral-500">{c.niche ?? "—"}</td>
                 <td className="px-4 py-2 text-neutral-500">{c.leadSource ?? "—"}</td>
                 <td className="px-4 py-2 text-neutral-500">{c.sourceBatch ?? "—"}</td>
-                <td className="px-4 py-2">{c.started ? "Sim" : "—"}</td>
-                <td className="px-4 py-2">{STAGE_LABEL[c.stage] ?? c.stage}</td>
+                <td className="px-4 py-2 text-neutral-500">{c.currentFlow?.name ?? "—"}</td>
+                <td className="px-4 py-2">{c.stageLabel ?? "—"}</td>
                 <td className="px-4 py-2">
                   <button
                     onClick={() => handleQualificar(c)}

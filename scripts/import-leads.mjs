@@ -131,7 +131,6 @@ async function main() {
             sourceBatch: opts.batch,
             niche: opts.niche,
             leadSource: opts.source,
-            stage: "novo",
             companyData,
           },
         });

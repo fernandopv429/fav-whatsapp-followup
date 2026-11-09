@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
 
     try {
       await prisma.contact.create({
-        data: { phone, name, sourceBatch, niche, leadSource, stage: "novo", companyData },
+        data: { phone, name, sourceBatch, niche, leadSource, companyData },
       });
 
       criados++;

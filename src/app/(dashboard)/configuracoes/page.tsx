@@ -3,8 +3,6 @@
 import { useEffect, useState } from "react";
 
 interface SettingsForm {
-  msg1ThresholdMinutes: number;
-  msg2ThresholdMinutes: number;
   newContactsDailyCap: number;
   sendWindowStart: number;
   sendWindowEnd: number;
@@ -17,19 +15,9 @@ interface SettingsForm {
 
 const FIELDS: { key: keyof SettingsForm; label: string; hint: string }[] = [
   {
-    key: "msg1ThresholdMinutes",
-    label: "Limiar da mensagem 1 (minutos)",
-    hint: "Resposta até esse tempo = pode ter IA (manda a msg de verificação). Sem resposta até esse tempo = já confirma 'não tem IA' e entra na simulação.",
-  },
-  {
-    key: "msg2ThresholdMinutes",
-    label: "Limiar da mensagem 2 / verificação (minutos)",
-    hint: "Resposta até esse tempo confirma 'tem IA' (sai do funil). Sem resposta até esse tempo confirma 'não tem IA'.",
-  },
-  {
     key: "newContactsDailyCap",
     label: "Limite diário de contatos novos",
-    hint: "Quantos contatos novos (mensagem inicial) no máximo por dia, somando todos os números — independente da capacidade de cada número. Mensagens de verificação, simulação e oferta não entram nesse limite.",
+    hint: "Quantos contatos novos (primeiro passo de um fluxo) no máximo por dia, somando todos os números — independente da capacidade de cada número. Mensagens de verificação, simulação e oferta não entram nesse limite.",
   },
   { key: "sendWindowStart", label: "Início da janela de envio (hora, 0-23)", hint: "" },
   { key: "sendWindowEnd", label: "Fim da janela de envio (hora, 0-23)", hint: "" },
@@ -67,8 +55,8 @@ export default function ConfiguracoesPage() {
     <div className="max-w-xl space-y-6">
       <h1 className="text-lg font-semibold text-neutral-900">Configurações</h1>
       <p className="text-sm text-neutral-500">
-        A quantidade de dias da simulação de cliente perdido não é configurada aqui — ela é automática,
-        igual à quantidade de números ativos (veja Números).
+        Os limiares de resposta e o que acontece em cada passo agora são configurados por fluxo, em{" "}
+        <strong>Fluxos</strong> — não ficam mais aqui.
       </p>
 
       <form onSubmit={handleSave} className="space-y-4 rounded-lg border border-neutral-200 bg-white p-4">

@@ -10,20 +10,37 @@ type ContactWithFlow = Contact & { currentFlow: Flow | null };
 
 const MAX_HOPS_PER_CONTACT = 10;
 
+// O container roda em UTC (sem TZ configurado), mas toda janela de envio e
+// cap diário é pensado em horário de Brasília — America/Sao_Paulo é UTC-3
+// fixo (sem horário de verão desde 2019), então um deslocamento fixo resolve
+// sem precisar de dados de timezone do ICU.
+const BR_OFFSET_MS = 3 * 60 * 60 * 1000;
+
+function toBrDate(date: Date): Date {
+  return new Date(date.getTime() - BR_OFFSET_MS);
+}
+
+function brHour(date: Date): number {
+  return toBrDate(date).getUTCHours();
+}
+
 function randomInt(min: number, max: number): number {
   return Math.floor(min + Math.random() * (max - min + 1));
 }
 
 function isSameDay(a: Date, b: Date): boolean {
+  const brA = toBrDate(a);
+  const brB = toBrDate(b);
   return (
-    a.getUTCFullYear() === b.getUTCFullYear() &&
-    a.getUTCMonth() === b.getUTCMonth() &&
-    a.getUTCDate() === b.getUTCDate()
+    brA.getUTCFullYear() === brB.getUTCFullYear() &&
+    brA.getUTCMonth() === brB.getUTCMonth() &&
+    brA.getUTCDate() === brB.getUTCDate()
   );
 }
 
 function startOfDay(now: Date): Date {
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const br = toBrDate(now);
+  return new Date(Date.UTC(br.getUTCFullYear(), br.getUTCMonth(), br.getUTCDate()) + BR_OFFSET_MS);
 }
 
 /** Aplica reset diário de contador e progresso de aquecimento; devolve o número atualizado. */
@@ -70,7 +87,7 @@ function isWithinSendWindow(
 ): boolean {
   const start = step.sendWindowStart ?? contact.currentFlow?.sendWindowStart ?? settings.sendWindowStart;
   const end = step.sendWindowEnd ?? contact.currentFlow?.sendWindowEnd ?? settings.sendWindowEnd;
-  const hour = now.getHours();
+  const hour = brHour(now);
   return hour >= start && hour < end;
 }
 

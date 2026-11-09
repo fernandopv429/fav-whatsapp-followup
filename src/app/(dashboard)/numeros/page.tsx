@@ -111,7 +111,7 @@ export default function NumerosPage() {
         <h1 className="text-lg font-semibold text-neutral-900">Números</h1>
       </div>
 
-      <form onSubmit={handleCreate} className="flex items-end gap-2 rounded-lg border border-neutral-200 bg-white p-4">
+      <form onSubmit={handleCreate} className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-4 sm:flex-row sm:items-end">
         <div className="flex-1 space-y-1">
           <label className="text-sm text-neutral-600">Nome do número (ex: Comercial 1)</label>
           <input
@@ -153,8 +153,8 @@ export default function NumerosPage() {
         cada dia usa um número diferente, na ordem que você definir aqui.
       </p>
 
-      <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
+        <table className="w-full min-w-[760px] text-sm">
           <thead className="bg-neutral-50 text-left text-neutral-500">
             <tr>
               <th className="px-4 py-2">Ordem</th>

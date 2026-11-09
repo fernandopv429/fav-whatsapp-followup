@@ -126,6 +126,7 @@ model Contact {
   flowStartedAt   DateTime?
   rotateIndex     Int          @default(0)
   stageLabel      String?
+  aiPaused        Boolean      @default(false)
 
   initialSentAt   DateTime?
   msg2SentAt      DateTime?

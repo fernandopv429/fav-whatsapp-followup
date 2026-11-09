@@ -358,7 +358,7 @@ export default function FlowEditorClient({ flowId }: { flowId: string }) {
         ))}
       </datalist>
 
-      <div className="flex items-end gap-2 rounded-lg border border-dashed border-neutral-300 bg-white p-4">
+      <div className="flex flex-wrap items-end gap-2 rounded-lg border border-dashed border-neutral-300 bg-white p-4">
         <div className="space-y-1">
           <label className="text-sm text-neutral-600">Tipo do novo passo</label>
           <select

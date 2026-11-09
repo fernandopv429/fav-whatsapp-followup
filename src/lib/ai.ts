@@ -2,6 +2,10 @@ import Anthropic from "@anthropic-ai/sdk";
 
 const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
 
+/** Marcadores que a IA usa pra sinalizar o fim da conversa aberta (ai_reply); ver generateAiReply. */
+export const AI_REPLY_QUALIFIED_MARKER = "[[QUALIFICADO]]";
+export const AI_REPLY_DISQUALIFIED_MARKER = "[[DESQUALIFICADO]]";
+
 function getClient(): Anthropic {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -92,6 +96,12 @@ export async function generateAiReply(params: {
       "quebre em 2 a 4 mensagens separadas por uma linha em branco (duas quebras de linha), como " +
       "alguém mandando várias mensagens seguidas no WhatsApp em vez de um texto corrido só. Não " +
       "numere nem use marcadores nas mensagens.\n\n" +
+      "Quando a conversa chegar numa conclusão natural, adicione UM dos marcadores abaixo sozinho " +
+      `numa linha extra no final da sua resposta (depois da última mensagem): "${AI_REPLY_QUALIFIED_MARKER}" ` +
+      "se o lead confirmou interesse real (ex: topou agendar a reunião/conversa) ou " +
+      `"${AI_REPLY_DISQUALIFIED_MARKER}" se o lead deixou claro que não tem interesse ou não é o ` +
+      "público certo. Na grande maioria das respostas a conversa ainda está em andamento — NÃO " +
+      "inclua marcador nenhum nesses casos, só continue a conversa normalmente.\n\n" +
       `Instruções: ${params.promptInstructions}\n\n` +
       `Nome do contato: ${params.contactName ?? "(desconhecido)"}\n` +
       `Dados da empresa (JSON, use o que for relevante):\n${dadosEmpresa}`,

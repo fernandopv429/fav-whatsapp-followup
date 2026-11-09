@@ -144,6 +144,10 @@ async function advanceSendableSteps(
       if (step.type === "delay_branch") break; // espera resposta/timeout
       if (step.type === "ai_reply") break; // passivo: só reage a mensagens recebidas, via webhook
 
+      // Aplica em qualquer tipo de passo que possa ser o primeiro do fluxo
+      // (send ou ai_offer) — o cap diário de novos contatos vale pros dois.
+      const isEntryStep = step.position === 0 && !contact.flowStartedAt;
+
       if (step.type === "end") {
         const updated = await prisma.contact.update({
           where: { id: contact.id },
@@ -155,7 +159,6 @@ async function advanceSendableSteps(
       }
 
       if (step.type === "send") {
-        const isEntryStep = step.position === 0 && !contact.flowStartedAt;
         if (isEntryStep && novosContatosHoje >= settings.newContactsDailyCap) break; // cap do dia batido
         if (!isWithinSendWindow(step, contact, settings, now)) break; // fora da janela de envio do fluxo
 
@@ -195,6 +198,7 @@ async function advanceSendableSteps(
       }
 
       if (step.type === "ai_offer") {
+        if (isEntryStep && novosContatosHoje >= settings.newContactsDailyCap) break; // cap do dia batido
         if (!isWithinSendWindow(step, contact, settings, now)) break; // fora da janela de envio do fluxo
 
         const promptTemplate = step.templateKey
@@ -224,11 +228,13 @@ async function advanceSendableSteps(
             data: {
               currentStepId: step.nextStepId ?? null,
               stepEnteredAt: now,
-              stageLabel: "oferta_enviada",
+              stageLabel: isEntryStep ? (step.templateKey ?? "contatado") : "oferta_enviada",
               ...(step.numberStrategy === "rotate" && { rotateIndex: { increment: 1 } }),
+              ...(isEntryStep && { flowStartedAt: now }),
             },
           });
           contact = { ...updatedOffer, currentFlow: contact.currentFlow };
+          if (isEntryStep) novosContatosHoje++;
           await prisma.messageLog.create({
             data: {
               contactId: contact.id,

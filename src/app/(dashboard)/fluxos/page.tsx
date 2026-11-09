@@ -54,7 +54,7 @@ export default function FluxosPage() {
         qualificação de IA com vários números, e uma cadência simples com um número só.
       </p>
 
-      <form onSubmit={handleCreate} className="flex items-end gap-2 rounded-lg border border-neutral-200 bg-white p-4">
+      <form onSubmit={handleCreate} className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-4 sm:flex-row sm:items-end">
         <div className="flex-1 space-y-1">
           <label className="text-sm text-neutral-600">Nome do fluxo (ex: Funil IA, Cadência advocacia)</label>
           <input
@@ -72,8 +72,8 @@ export default function FluxosPage() {
         </button>
       </form>
 
-      <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
+        <table className="w-full min-w-[560px] text-sm">
           <thead className="bg-neutral-50 text-left text-neutral-500">
             <tr>
               <th className="px-4 py-2">Nome</th>

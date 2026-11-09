@@ -62,7 +62,7 @@ export default function MensagensPage() {
         chave abaixo.
       </p>
 
-      <form onSubmit={handleCreate} className="flex items-end gap-2 rounded-lg border border-neutral-200 bg-white p-4">
+      <form onSubmit={handleCreate} className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-4 sm:flex-row sm:items-end">
         <div className="flex-1 space-y-1">
           <label className="text-sm text-neutral-600">Nova chave de template (ex: inicial, oferta, dia3)</label>
           <input

@@ -14,6 +14,7 @@ interface Contact {
   currentFlow: { name: string } | null;
   companyData: Record<string, unknown> | null;
   createdAt: string;
+  aiPaused: boolean;
 }
 
 interface Resumo {
@@ -40,6 +41,7 @@ export default function ContatosPage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [qualifyingId, setQualifyingId] = useState<string | null>(null);
   const [qualifyError, setQualifyError] = useState<string | null>(null);
+  const [togglingAiId, setTogglingAiId] = useState<string | null>(null);
   const [nicheFilter, setNicheFilter] = useState("todos");
   const [iniciarNicho, setIniciarNicho] = useState("todos");
   const [iniciarFlowId, setIniciarFlowId] = useState("");
@@ -144,6 +146,22 @@ export default function ContatosPage() {
       loadResumo();
     } finally {
       setIniciando(false);
+    }
+  }
+
+  async function handleToggleAiPaused(contact: Contact) {
+    setTogglingAiId(contact.id);
+    try {
+      await fetch(`/api/contatos/${contact.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ aiPaused: !contact.aiPaused }),
+      });
+      setContacts((prev) =>
+        prev.map((c) => (c.id === contact.id ? { ...c, aiPaused: !contact.aiPaused } : c))
+      );
+    } finally {
+      setTogglingAiId(null);
     }
   }
 
@@ -324,7 +342,7 @@ export default function ContatosPage() {
 
       {qualifyError && <p className="text-sm text-red-600">{qualifyError}</p>}
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <label className="text-sm text-neutral-600">Filtrar lista por nicho:</label>
         <select
           value={nicheFilter}
@@ -341,8 +359,8 @@ export default function ContatosPage() {
         <span className="text-xs text-neutral-400">(mostra os 200 mais recentes desse filtro)</span>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
+        <table className="w-full min-w-[840px] text-sm">
           <thead className="bg-neutral-50 text-left text-neutral-500">
             <tr>
               <th className="px-4 py-2">Telefone</th>
@@ -352,20 +370,21 @@ export default function ContatosPage() {
               <th className="px-4 py-2">Lote</th>
               <th className="px-4 py-2">Fluxo</th>
               <th className="px-4 py-2">Estágio</th>
+              <th className="px-4 py-2">IA</th>
               <th className="px-4 py-2">Ações</th>
             </tr>
           </thead>
           <tbody>
             {contacts.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-6 text-center text-neutral-400">
+                <td colSpan={9} className="px-4 py-6 text-center text-neutral-400">
                   Nenhum contato ainda.
                 </td>
               </tr>
             )}
             {contacts.map((c) => (
               <tr key={c.id} className="border-t border-neutral-100">
-                <td className="px-4 py-2">{c.phone}</td>
+                <td className="px-4 py-2 whitespace-nowrap">{c.phone}</td>
                 <td className="px-4 py-2">{c.name ?? "—"}</td>
                 <td className="px-4 py-2 text-neutral-500">{c.niche ?? "—"}</td>
                 <td className="px-4 py-2 text-neutral-500">{c.leadSource ?? "—"}</td>
@@ -373,6 +392,19 @@ export default function ContatosPage() {
                 <td className="px-4 py-2 text-neutral-500">{c.currentFlow?.name ?? "—"}</td>
                 <td className="px-4 py-2">{c.stageLabel ?? "—"}</td>
                 <td className="px-4 py-2">
+                  <button
+                    onClick={() => handleToggleAiPaused(c)}
+                    disabled={togglingAiId === c.id}
+                    className={`rounded px-2 py-1 text-xs font-medium disabled:opacity-50 ${
+                      c.aiPaused
+                        ? "bg-amber-100 text-amber-800 hover:bg-amber-200"
+                        : "bg-green-100 text-green-800 hover:bg-green-200"
+                    }`}
+                  >
+                    {togglingAiId === c.id ? "..." : c.aiPaused ? "Pausada" : "Ativa"}
+                  </button>
+                </td>
+                <td className="px-4 py-2 whitespace-nowrap">
                   <button
                     onClick={() => handleQualificar(c)}
                     disabled={qualifyingId === c.id}

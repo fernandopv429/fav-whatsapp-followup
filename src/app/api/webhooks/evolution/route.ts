@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizePhoneBR } from "@/lib/phone";
-import { generateAiReply } from "@/lib/ai";
+import { generateAiReply, AI_REPLY_QUALIFIED_MARKER, AI_REPLY_DISQUALIFIED_MARKER } from "@/lib/ai";
 
 interface EvolutionWebhookBody {
   event?: string;
@@ -59,8 +59,13 @@ export async function POST(req: NextRequest) {
   if (!step) return NextResponse.json({ ok: true });
 
   if (step.type === "ai_reply") {
+    // Pausa manual: o usuário assumiu a conversa pela tela de Contatos — a IA
+    // fica muda pra esse contato até ele reativar.
+    if (contact.aiPaused) return NextResponse.json({ ok: true });
+
     // Conversa aberta: cada mensagem recebida gera uma resposta da IA, sem
-    // nunca avançar currentStepId — o passo permanece ativo indefinidamente.
+    // nunca avançar currentStepId — o passo permanece ativo indefinidamente,
+    // a não ser que a própria IA sinalize o fim (ver marcadores abaixo).
     const promptTemplate = step.templateKey
       ? await prisma.messageTemplate.findUnique({ where: { key: step.templateKey } })
       : null;
@@ -89,13 +94,24 @@ export async function POST(req: NextRequest) {
     const isPrimeiraResposta = jaRespondeuNessePasso === 0;
 
     try {
-      const replyBody = await generateAiReply({
+      const rawReply = await generateAiReply({
         promptInstructions: promptTemplate.bodyText,
         contactName: contact.name,
         niche: contact.niche,
         companyData: (contact.companyData as Record<string, unknown> | null) ?? null,
         history,
       });
+
+      // A IA sinaliza o fim da conversa aberta com um marcador oculto no fim
+      // da resposta — detecta, remove da mensagem que vai ser enviada, e
+      // tira o contato do piloto automático.
+      let endLabel: string | null = null;
+      if (rawReply.includes(AI_REPLY_QUALIFIED_MARKER)) endLabel = "qualificado";
+      else if (rawReply.includes(AI_REPLY_DISQUALIFIED_MARKER)) endLabel = "desqualificado";
+      const replyBody = rawReply
+        .replaceAll(AI_REPLY_QUALIFIED_MARKER, "")
+        .replaceAll(AI_REPLY_DISQUALIFIED_MARKER, "")
+        .trim();
 
       // A IA é instruída a quebrar respostas longas em várias mensagens
       // separadas por linha em branco, pra simular alguém digitando várias
@@ -119,6 +135,13 @@ export async function POST(req: NextRequest) {
             mediaType: attachMedia ? (step.mediaType ?? undefined) : undefined,
             status: "queued",
           },
+        });
+      }
+
+      if (endLabel) {
+        await prisma.contact.update({
+          where: { id: contact.id },
+          data: { currentStepId: null, currentFlowId: null, stageLabel: endLabel },
         });
       }
     } catch (err) {

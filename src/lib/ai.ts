@@ -55,3 +55,49 @@ export async function generatePersonalizedOffer(params: {
   }
   return textBlock.text.trim();
 }
+
+/**
+ * Gera uma resposta de IA conversacional (passo `ai_reply`) — usada quando o
+ * lead responde e a conversa fica aberta, com a IA assumindo a partir daí.
+ * `history` é o histórico recente (mais antiga primeiro), a última entrada
+ * sendo a mensagem que o lead acabou de mandar.
+ */
+export async function generateAiReply(params: {
+  promptInstructions: string;
+  contactName: string | null;
+  niche: string | null;
+  companyData: Record<string, unknown> | null;
+  history: { direction: "in" | "out"; body: string }[];
+}): Promise<string> {
+  const client = getClient();
+  const model = process.env.ANTHROPIC_MODEL || DEFAULT_MODEL;
+
+  const dadosEmpresa = params.companyData
+    ? JSON.stringify(params.companyData, null, 2)
+    : "(nenhum dado de empresa disponível para esse contato)";
+
+  const messages = params.history.map((h) => ({
+    role: h.direction === "in" ? ("user" as const) : ("assistant" as const),
+    content: h.body,
+  }));
+
+  const response = await client.messages.create({
+    model,
+    max_tokens: 400,
+    system:
+      "Você é um atendente de WhatsApp conversando em nome de uma empresa, seguindo as instruções " +
+      `abaixo pro nicho "${params.niche ?? "geral"}". Responda de forma natural, curta, como ` +
+      "alguém digitando no WhatsApp — não como um e-mail. Responda SOMENTE com o texto da mensagem, " +
+      "sem aspas, sem meta-comentário.\n\n" +
+      `Instruções: ${params.promptInstructions}\n\n` +
+      `Nome do contato: ${params.contactName ?? "(desconhecido)"}\n` +
+      `Dados da empresa (JSON, use o que for relevante):\n${dadosEmpresa}`,
+    messages: messages.length > 0 ? messages : [{ role: "user", content: "(sem mensagem anterior)" }],
+  });
+
+  const textBlock = response.content.find((b) => b.type === "text");
+  if (!textBlock || textBlock.type !== "text") {
+    throw new Error("Resposta da IA não trouxe texto.");
+  }
+  return textBlock.text.trim();
+}

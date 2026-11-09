@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 
-type StepType = "send" | "delay_branch" | "ai_offer" | "end";
+type StepType = "send" | "delay_branch" | "ai_offer" | "ai_reply" | "end";
 type NumberStrategy = "same" | "specific" | "rotate";
 
 interface FlowStepRow {
@@ -19,11 +19,15 @@ interface FlowStepRow {
   onReplySendTemplateKey: string | null;
   onTimeoutGotoStepId: string | null;
   endLabel: string | null;
+  mediaUrl: string | null;
+  mediaType: string | null;
 }
 
 interface FlowDetail {
   id: string;
   name: string;
+  sendWindowStart: number | null;
+  sendWindowEnd: number | null;
   steps: FlowStepRow[];
 }
 
@@ -40,6 +44,7 @@ const TYPE_LABEL: Record<StepType, string> = {
   send: "Enviar mensagem",
   delay_branch: "Esperar resposta",
   ai_offer: "Oferta por IA",
+  ai_reply: "Conversa aberta com IA",
   end: "Fim",
 };
 
@@ -48,6 +53,7 @@ function stepLabel(step: FlowStepRow): string {
   if (step.type === "send") return `${n}. Enviar "${step.templateKey ?? "?"}"`;
   if (step.type === "delay_branch") return `${n}. Esperar resposta (${step.thresholdMinutes ?? "?"} min)`;
   if (step.type === "ai_offer") return `${n}. Oferta IA`;
+  if (step.type === "ai_reply") return `${n}. Conversa aberta com IA`;
   return `${n}. Fim (${step.endLabel ?? "sem rótulo"})`;
 }
 
@@ -83,6 +89,15 @@ export default function FlowEditorClient({ flowId }: { flowId: string }) {
     load();
   }
 
+  async function updateFlowWindow(patch: { sendWindowStart?: number | null; sendWindowEnd?: number | null }) {
+    await fetch(`/api/flows/${flowId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    load();
+  }
+
   async function updateStep(stepId: string, patch: Partial<FlowStepRow>) {
     setSaving(stepId);
     try {
@@ -114,6 +129,38 @@ export default function FlowEditorClient({ flowId }: { flowId: string }) {
           ← Fluxos
         </Link>
         <h1 className="mt-1 text-lg font-semibold text-neutral-900">{flow.name}</h1>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-neutral-200 bg-white p-4">
+        <div className="space-y-1">
+          <label className="text-xs text-neutral-600">Janela de envio — início (hora, 0-23)</label>
+          <input
+            type="number"
+            min={0}
+            max={23}
+            defaultValue={flow.sendWindowStart ?? ""}
+            placeholder="padrão global"
+            onBlur={(e) =>
+              updateFlowWindow({ sendWindowStart: e.target.value === "" ? null : Number(e.target.value) })
+            }
+            className="w-36 rounded border border-neutral-300 px-2 py-1.5 text-sm"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs text-neutral-600">Janela de envio — fim (hora, 0-23)</label>
+          <input
+            type="number"
+            min={0}
+            max={23}
+            defaultValue={flow.sendWindowEnd ?? ""}
+            placeholder="padrão global"
+            onBlur={(e) =>
+              updateFlowWindow({ sendWindowEnd: e.target.value === "" ? null : Number(e.target.value) })
+            }
+            className="w-36 rounded border border-neutral-300 px-2 py-1.5 text-sm"
+          />
+        </div>
+        <p className="text-xs text-neutral-400">Deixe em branco pra usar a janela padrão de Configurações.</p>
       </div>
 
       {flow.steps.length === 0 && (
@@ -192,6 +239,30 @@ export default function FlowEditorClient({ flowId }: { flowId: string }) {
                   ))}
                 </select>
               </div>
+
+              <MediaFields step={step} onChange={(patch) => updateStep(step.id, patch)} />
+            </>
+          )}
+
+          {step.type === "ai_reply" && (
+            <>
+              <div className="space-y-1">
+                <label className="text-xs text-neutral-600">
+                  Template com as instruções do prompt (como a IA deve conversar nesse nicho)
+                </label>
+                <input
+                  list="template-keys"
+                  defaultValue={step.templateKey ?? ""}
+                  onBlur={(e) => updateStep(step.id, { templateKey: e.target.value })}
+                  className="w-full rounded border border-neutral-300 px-3 py-1.5 text-sm"
+                />
+              </div>
+              <p className="text-xs text-neutral-400">
+                Conversa aberta: a IA responde toda mensagem nova do lead usando essas instruções,
+                sem sair desse passo — não há &quot;próximo passo&quot; porque a conversa não tem fim definido.
+              </p>
+
+              <MediaFields step={step} onChange={(patch) => updateStep(step.id, patch)} />
             </>
           )}
 
@@ -305,6 +376,43 @@ export default function FlowEditorClient({ flowId }: { flowId: string }) {
         >
           Adicionar passo
         </button>
+      </div>
+    </div>
+  );
+}
+
+function MediaFields({
+  step,
+  onChange,
+}: {
+  step: FlowStepRow;
+  onChange: (patch: Partial<FlowStepRow>) => void;
+}) {
+  return (
+    <div className="rounded border border-neutral-100 bg-neutral-50 p-3 space-y-2">
+      <p className="text-xs font-medium text-neutral-600">Anexar imagem ou vídeo (opcional)</p>
+      <div className="flex flex-wrap gap-3">
+        <div className="space-y-1">
+          <label className="text-xs text-neutral-600">Tipo</label>
+          <select
+            defaultValue={step.mediaType ?? ""}
+            onChange={(e) => onChange({ mediaType: e.target.value || null })}
+            className="rounded border border-neutral-300 px-2 py-1.5 text-sm"
+          >
+            <option value="">Sem mídia</option>
+            <option value="image">Imagem</option>
+            <option value="video">Vídeo</option>
+          </select>
+        </div>
+        <div className="min-w-[16rem] flex-1 space-y-1">
+          <label className="text-xs text-neutral-600">URL da mídia</label>
+          <input
+            defaultValue={step.mediaUrl ?? ""}
+            onBlur={(e) => onChange({ mediaUrl: e.target.value || null })}
+            placeholder="https://..."
+            className="w-full rounded border border-neutral-300 px-3 py-1.5 text-sm"
+          />
+        </div>
       </div>
     </div>
   );

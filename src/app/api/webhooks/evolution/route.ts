@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizePhoneBR } from "@/lib/phone";
+import { generateAiReply } from "@/lib/ai";
 
 interface EvolutionWebhookBody {
   event?: string;
@@ -55,7 +56,55 @@ export async function POST(req: NextRequest) {
   if (!contact.currentStepId) return NextResponse.json({ ok: true }); // fluxo já encerrado, só loga
 
   const step = await prisma.flowStep.findUnique({ where: { id: contact.currentStepId } });
-  if (!step || step.type !== "delay_branch") return NextResponse.json({ ok: true }); // não está esperando resposta agora
+  if (!step) return NextResponse.json({ ok: true });
+
+  if (step.type === "ai_reply") {
+    // Conversa aberta: cada mensagem recebida gera uma resposta da IA, sem
+    // nunca avançar currentStepId — o passo permanece ativo indefinidamente.
+    const promptTemplate = step.templateKey
+      ? await prisma.messageTemplate.findUnique({ where: { key: step.templateKey } })
+      : null;
+    if (!promptTemplate?.bodyText.trim()) return NextResponse.json({ ok: true });
+
+    const recentLogs = await prisma.messageLog.findMany({
+      where: { contactId: contact.id },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    });
+    const history = recentLogs
+      .slice()
+      .reverse()
+      .map((l) => ({ direction: l.direction, body: l.body }));
+
+    try {
+      const replyBody = await generateAiReply({
+        promptInstructions: promptTemplate.bodyText,
+        contactName: contact.name,
+        niche: contact.niche,
+        companyData: (contact.companyData as Record<string, unknown> | null) ?? null,
+        history,
+      });
+
+      await prisma.messageLog.create({
+        data: {
+          contactId: contact.id,
+          numberId: contact.assignedNumberId,
+          direction: "out",
+          templateKey: step.templateKey,
+          body: replyBody,
+          mediaUrl: step.mediaUrl ?? undefined,
+          mediaType: step.mediaType ?? undefined,
+          status: "queued",
+        },
+      });
+    } catch (err) {
+      console.error(`Falha ao gerar resposta de IA (passo ${step.id}) pro contato ${contact.id}:`, err);
+    }
+
+    return NextResponse.json({ ok: true });
+  }
+
+  if (step.type !== "delay_branch") return NextResponse.json({ ok: true }); // não está esperando resposta agora
 
   const sendTemplate = step.onReplySendTemplateKey
     ? await prisma.messageTemplate.findUnique({ where: { key: step.onReplySendTemplateKey } })

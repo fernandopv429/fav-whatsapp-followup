@@ -14,6 +14,26 @@ export async function GET(
   return NextResponse.json(flow);
 }
 
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const body = await req.json().catch(() => ({}));
+
+  const data: { name?: string; sendWindowStart?: number | null; sendWindowEnd?: number | null } = {};
+  if (typeof body.name === "string" && body.name.trim()) data.name = body.name.trim();
+  if ("sendWindowStart" in body) {
+    data.sendWindowStart = body.sendWindowStart === null ? null : Number(body.sendWindowStart);
+  }
+  if ("sendWindowEnd" in body) {
+    data.sendWindowEnd = body.sendWindowEnd === null ? null : Number(body.sendWindowEnd);
+  }
+
+  const flow = await prisma.flow.update({ where: { id }, data });
+  return NextResponse.json(flow);
+}
+
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }

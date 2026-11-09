@@ -17,6 +17,8 @@ export async function PATCH(
     onReplySendTemplateKey?: string | null;
     onTimeoutGotoStepId?: string | null;
     endLabel?: string | null;
+    mediaUrl?: string | null;
+    mediaType?: string | null;
   };
 
   const step = await prisma.flowStep.update({
@@ -33,6 +35,8 @@ export async function PATCH(
       }),
       ...(body.onTimeoutGotoStepId !== undefined && { onTimeoutGotoStepId: body.onTimeoutGotoStepId || null }),
       ...(body.endLabel !== undefined && { endLabel: body.endLabel || null }),
+      ...(body.mediaUrl !== undefined && { mediaUrl: body.mediaUrl || null }),
+      ...(body.mediaType !== undefined && { mediaType: body.mediaType || null }),
     },
   });
 

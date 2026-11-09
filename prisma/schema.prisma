@@ -31,6 +31,7 @@ enum FlowStepType {
   send
   delay_branch
   ai_offer
+  ai_reply
   end
 }
 
@@ -62,12 +63,14 @@ model WhatsappNumber {
 }
 
 model Flow {
-  id        String     @id @default(cuid())
-  name      String
-  steps     FlowStep[]
-  contacts  Contact[]
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  id              String     @id @default(cuid())
+  name            String
+  sendWindowStart Int?
+  sendWindowEnd   Int?
+  steps           FlowStep[]
+  contacts        Contact[]
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
 }
 
 model FlowStep {
@@ -77,11 +80,13 @@ model FlowStep {
   type           FlowStepType
   position        Int
 
-  // send / ai_offer
+  // send / ai_offer / ai_reply
   templateKey    String?
   numberStrategy NumberStrategy?
   numberId       String?
   nextStepId     String?
+  mediaUrl       String?
+  mediaType      String?
 
   // delay_branch
   thresholdMinutes       Int?
@@ -149,6 +154,8 @@ model MessageLog {
   direction        LogDirection
   templateKey      String?
   body             String
+  mediaUrl         String?
+  mediaType        String?
   evolutionMessageId String?
   status           LogStatus    @default(queued)
   createdAt        DateTime     @default(now())

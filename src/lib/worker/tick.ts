@@ -1,10 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { getSettings } from "@/lib/settings";
-import { sendText } from "@/lib/evolution";
+import { sendText, sendMedia } from "@/lib/evolution";
 import { generatePersonalizedOffer } from "@/lib/ai";
 import { renderTemplate } from "@/lib/templates";
 import { computeWarmupProgress } from "@/lib/worker/warmup";
-import type { Contact, FlowStep, Settings, WhatsappNumber } from "@prisma/client";
+import type { Contact, Flow, FlowStep, Settings, WhatsappNumber } from "@prisma/client";
+
+type ContactWithFlow = Contact & { currentFlow: Flow | null };
 
 const MAX_HOPS_PER_CONTACT = 10;
 
@@ -53,6 +55,14 @@ async function getActiveNumbersOrdered(): Promise<WhatsappNumber[]> {
     orderBy: [{ order: "asc" }, { createdAt: "asc" }],
   });
   return activeNumbersCache;
+}
+
+/** Janela de envio do fluxo do contato, caindo pro padrão global quando o fluxo não tem a sua própria. */
+function isWithinSendWindow(contact: ContactWithFlow, settings: Settings, now: Date): boolean {
+  const start = contact.currentFlow?.sendWindowStart ?? settings.sendWindowStart;
+  const end = contact.currentFlow?.sendWindowEnd ?? settings.sendWindowEnd;
+  const hour = now.getHours();
+  return hour >= start && hour < end;
 }
 
 async function resolveNumberId(step: FlowStep, contact: Contact): Promise<string | null> {
@@ -105,7 +115,10 @@ async function advanceSendableSteps(
   settings: Settings,
   now: Date
 ): Promise<number> {
-  const pending = await prisma.contact.findMany({ where: { currentStepId: { not: null } } });
+  const pending = await prisma.contact.findMany({
+    where: { currentStepId: { not: null } },
+    include: { currentFlow: true },
+  });
 
   let novosContatosHoje = await prisma.contact.count({
     where: { flowStartedAt: { gte: startOfDay(now) } },
@@ -120,12 +133,14 @@ async function advanceSendableSteps(
       if (!step) break;
 
       if (step.type === "delay_branch") break; // espera resposta/timeout
+      if (step.type === "ai_reply") break; // passivo: só reage a mensagens recebidas, via webhook
 
       if (step.type === "end") {
-        contact = await prisma.contact.update({
+        const updated = await prisma.contact.update({
           where: { id: contact.id },
           data: { stageLabel: step.endLabel ?? null, currentStepId: null, currentFlowId: null },
         });
+        contact = { ...updated, currentFlow: null };
         advanced++;
         break;
       }
@@ -133,6 +148,7 @@ async function advanceSendableSteps(
       if (step.type === "send") {
         const isEntryStep = step.position === 0 && !contact.flowStartedAt;
         if (isEntryStep && novosContatosHoje >= settings.newContactsDailyCap) break; // cap do dia batido
+        if (!isWithinSendWindow(contact, settings, now)) break; // fora da janela de envio do fluxo
 
         const template = step.templateKey
           ? await prisma.messageTemplate.findUnique({ where: { key: step.templateKey } })
@@ -146,12 +162,14 @@ async function advanceSendableSteps(
               direction: "out",
               templateKey: step.templateKey,
               body: renderTemplate(template.bodyText, { nome: contact.name }),
+              mediaUrl: step.mediaUrl ?? undefined,
+              mediaType: step.mediaType ?? undefined,
               status: "queued",
             },
           });
         }
 
-        contact = await prisma.contact.update({
+        const updatedSend = await prisma.contact.update({
           where: { id: contact.id },
           data: {
             currentStepId: step.nextStepId ?? null,
@@ -161,20 +179,24 @@ async function advanceSendableSteps(
             ...(isEntryStep && { flowStartedAt: now }),
           },
         });
+        contact = { ...updatedSend, currentFlow: contact.currentFlow };
         if (isEntryStep) novosContatosHoje++;
         advanced++;
         continue;
       }
 
       if (step.type === "ai_offer") {
+        if (!isWithinSendWindow(contact, settings, now)) break; // fora da janela de envio do fluxo
+
         const promptTemplate = step.templateKey
           ? await prisma.messageTemplate.findUnique({ where: { key: step.templateKey } })
           : null;
         if (!promptTemplate?.bodyText.trim()) {
-          contact = await prisma.contact.update({
+          const updatedSkip = await prisma.contact.update({
             where: { id: contact.id },
             data: { currentStepId: step.nextStepId ?? null, stepEnteredAt: now },
           });
+          contact = { ...updatedSkip, currentFlow: contact.currentFlow };
           advanced++;
           continue;
         }
@@ -188,7 +210,7 @@ async function advanceSendableSteps(
           });
           const numberId = await resolveNumberId(step, contact);
 
-          contact = await prisma.contact.update({
+          const updatedOffer = await prisma.contact.update({
             where: { id: contact.id },
             data: {
               currentStepId: step.nextStepId ?? null,
@@ -197,6 +219,7 @@ async function advanceSendableSteps(
               ...(step.numberStrategy === "rotate" && { rotateIndex: { increment: 1 } }),
             },
           });
+          contact = { ...updatedOffer, currentFlow: contact.currentFlow };
           await prisma.messageLog.create({
             data: {
               contactId: contact.id,
@@ -204,6 +227,8 @@ async function advanceSendableSteps(
               direction: "out",
               templateKey: step.templateKey,
               body,
+              mediaUrl: step.mediaUrl ?? undefined,
+              mediaType: step.mediaType ?? undefined,
               status: "queued",
             },
           });
@@ -226,7 +251,6 @@ export interface TickResult {
   sent: number;
   timeouts: number;
   stepsAdvanced: number;
-  skippedForaDaJanela?: boolean;
   erros: number;
 }
 
@@ -242,11 +266,6 @@ export async function tick(): Promise<TickResult> {
   const stepsById = await loadAllSteps();
   const timeouts = await advanceDelayBranchTimeouts(stepsById, now);
   const stepsAdvanced = await advanceSendableSteps(stepsById, settings, now);
-
-  const hour = now.getHours();
-  if (hour < settings.sendWindowStart || hour >= settings.sendWindowEnd) {
-    return { sent: 0, timeouts, stepsAdvanced, skippedForaDaJanela: true, erros: 0 };
-  }
 
   const numbers = await prisma.whatsappNumber.findMany({
     where: { status: { in: ["warming_up", "active"] } },
@@ -279,12 +298,21 @@ export async function tick(): Promise<TickResult> {
     if (!nextMessage) continue;
 
     try {
-      const result = await sendText(
-        number.evolutionInstanceName,
-        nextMessage.contact.phone,
-        nextMessage.body,
-        number.evolutionInstanceToken ?? undefined
-      );
+      const result = nextMessage.mediaUrl
+        ? await sendMedia(
+            number.evolutionInstanceName,
+            nextMessage.contact.phone,
+            nextMessage.mediaUrl,
+            (nextMessage.mediaType as "image" | "video") ?? "image",
+            nextMessage.body,
+            number.evolutionInstanceToken ?? undefined
+          )
+        : await sendText(
+            number.evolutionInstanceName,
+            nextMessage.contact.phone,
+            nextMessage.body,
+            number.evolutionInstanceToken ?? undefined
+          );
 
       const jitterSeconds = randomInt(settings.minDelaySeconds, settings.maxDelaySeconds);
 

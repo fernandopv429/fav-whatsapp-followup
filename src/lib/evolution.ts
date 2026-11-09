@@ -133,3 +133,29 @@ export async function sendText(instanceName: string, number: string, text: strin
     body: { number, text },
   });
 }
+
+/**
+ * Envia imagem/vídeo (por URL) com legenda opcional.
+ * Payload conforme a documentação pública do Evolution Foundation pra v2 —
+ * ainda não validado com um envio real (nenhum fluxo usa mídia em produção
+ * ainda); confirmar contra `/docs` da instance antes de depender disso.
+ */
+export async function sendMedia(
+  instanceName: string,
+  number: string,
+  mediaUrl: string,
+  mediaType: "image" | "video",
+  caption?: string,
+  apiKey?: string
+) {
+  return request<{ key?: { id?: string } }>(`/message/sendMedia/${instanceName}`, {
+    method: "POST",
+    apiKey,
+    body: {
+      number,
+      mediatype: mediaType,
+      media: mediaUrl,
+      caption: caption ?? "",
+    },
+  });
+}

@@ -18,6 +18,8 @@ export async function POST(
     onReplySendTemplateKey?: string | null;
     onTimeoutGotoStepId?: string | null;
     endLabel?: string | null;
+    mediaUrl?: string | null;
+    mediaType?: string | null;
   };
 
   if (!body.type) {
@@ -44,6 +46,8 @@ export async function POST(
       onReplySendTemplateKey: body.onReplySendTemplateKey || null,
       onTimeoutGotoStepId: body.onTimeoutGotoStepId || null,
       endLabel: body.endLabel || null,
+      mediaUrl: body.mediaUrl || null,
+      mediaType: body.mediaType || null,
     },
   });
 

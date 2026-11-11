@@ -22,6 +22,51 @@ function extractText(data: EvolutionWebhookBody["data"]): string {
   );
 }
 
+// Proteção contra loop de IA-com-IA: se o número do lead também for um
+// atendimento automático, as duas IAs respondem uma pra outra sem parar.
+// Dois sinais, qualquer um pausa a IA automaticamente (mesmo mecanismo da
+// pausa manual) pra um humano revisar:
+//  - muitas trocas seguidas nesse passo (conversa real também pode ter isso,
+//    mas é um teto generoso só pra não rodar pra sempre);
+//  - respostas rápidas demais em sequência (um humano não bate resposta em
+//    menos de alguns segundos; IA respondendo IA, sim).
+const MAX_AI_EXCHANGES_PER_STEP = 6;
+const FAST_REPLY_THRESHOLD_MS = 4000;
+const FAST_REPLY_STREAK_LIMIT = 3;
+
+interface TurnLog {
+  direction: "in" | "out";
+  createdAt: Date;
+}
+
+/** Colapsa chunks seguidos da mesma direção (uma resposta quebrada em várias mensagens) numa única "vez". */
+function collapseIntoTurns(logs: TurnLog[]): TurnLog[] {
+  const turns: TurnLog[] = [];
+  for (const log of logs) {
+    const last = turns[turns.length - 1];
+    if (last && last.direction === log.direction) {
+      if (log.direction === "out") last.createdAt = log.createdAt; // guarda o último chunk da leva
+    } else {
+      turns.push({ direction: log.direction, createdAt: log.createdAt });
+    }
+  }
+  return turns;
+}
+
+/** Quantas trocas (resposta nossa -> resposta deles) seguidas, a partir da mais recente, vieram rápido demais. */
+function fastReplyStreak(logs: TurnLog[]): number {
+  const turns = collapseIntoTurns(logs);
+  let streak = 0;
+  for (let i = turns.length - 1; i > 0; i--) {
+    const cur = turns[i];
+    const prev = turns[i - 1];
+    if (cur.direction !== "in" || prev.direction !== "out") break;
+    if (cur.createdAt.getTime() - prev.createdAt.getTime() >= FAST_REPLY_THRESHOLD_MS) break;
+    streak++;
+  }
+  return streak;
+}
+
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as EvolutionWebhookBody | null;
   if (!body) return NextResponse.json({ ok: true });
@@ -77,10 +122,8 @@ export async function POST(req: NextRequest) {
       orderBy: { createdAt: "desc" },
       take: 20,
     });
-    const history = recentLogs
-      .slice()
-      .reverse()
-      .map((l) => ({ direction: l.direction, body: l.body }));
+    const chronological = recentLogs.slice().reverse();
+    const history = chronological.map((l) => ({ direction: l.direction, body: l.body }));
 
     // A mídia do passo (ex: um PDF de material) só vai junto na primeira resposta
     // da IA depois de entrar nesse passo — nas seguintes, só texto.
@@ -93,6 +136,14 @@ export async function POST(req: NextRequest) {
       },
     });
     const isPrimeiraResposta = jaRespondeuNessePasso === 0;
+
+    if (
+      jaRespondeuNessePasso >= MAX_AI_EXCHANGES_PER_STEP ||
+      fastReplyStreak(chronological) >= FAST_REPLY_STREAK_LIMIT
+    ) {
+      await prisma.contact.update({ where: { id: contact.id }, data: { aiPaused: true } });
+      return NextResponse.json({ ok: true });
+    }
 
     try {
       const rawReply = await generateAiReply({
@@ -117,11 +168,7 @@ export async function POST(req: NextRequest) {
       // A IA é instruída a quebrar respostas longas em várias mensagens
       // separadas por linha em branco, pra simular alguém digitando várias
       // mensagens seguidas em vez de mandar um bloco único de texto.
-      const chunks = replyBody
-        .split(/\n\s*\n/)
-        .map((c) => c.trim())
-        .filter(Boolean);
-      if (chunks.length === 0) chunks.push(replyBody.trim());
+      const chunks = splitMessageChunks(replyBody);
 
       for (let i = 0; i < chunks.length; i++) {
         const attachMedia = i === 0 && isPrimeiraResposta;

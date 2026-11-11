@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getSettings } from "@/lib/settings";
 import { sendText, sendMedia } from "@/lib/evolution";
 import { generatePersonalizedOffer } from "@/lib/ai";
-import { renderTemplate } from "@/lib/templates";
+import { renderTemplate, splitMessageChunks } from "@/lib/templates";
 import { computeWarmupProgress } from "@/lib/worker/warmup";
 import type { Contact, Flow, FlowStep, Settings, WhatsappNumber } from "@prisma/client";
 
@@ -188,18 +188,22 @@ async function advanceSendableSteps(
           : null;
         if (template?.bodyText.trim()) {
           const numberId = await resolveNumberId(step, contact);
-          await prisma.messageLog.create({
-            data: {
-              contactId: contact.id,
-              numberId: numberId ?? undefined,
-              direction: "out",
-              templateKey: step.templateKey,
-              body: renderTemplate(template.bodyText, { nome: contact.name }),
-              mediaUrl: step.mediaUrl ?? undefined,
-              mediaType: step.mediaType ?? undefined,
-              status: "queued",
-            },
-          });
+          const rendered = renderTemplate(template.bodyText, { nome: contact.name });
+          const chunks = splitMessageChunks(rendered);
+          for (let i = 0; i < chunks.length; i++) {
+            await prisma.messageLog.create({
+              data: {
+                contactId: contact.id,
+                numberId: numberId ?? undefined,
+                direction: "out",
+                templateKey: step.templateKey,
+                body: chunks[i],
+                mediaUrl: i === 0 ? step.mediaUrl ?? undefined : undefined,
+                mediaType: i === 0 ? step.mediaType ?? undefined : undefined,
+                status: "queued",
+              },
+            });
+          }
         }
 
         const updatedSend = await prisma.contact.update({

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizePhoneBR } from "@/lib/phone";
 import { generateAiReply, AI_REPLY_QUALIFIED_MARKER, AI_REPLY_DISQUALIFIED_MARKER } from "@/lib/ai";
+import { splitMessageChunks } from "@/lib/templates";
 
 interface EvolutionWebhookBody {
   event?: string;
@@ -168,16 +169,18 @@ export async function POST(req: NextRequest) {
   });
 
   if (count > 0 && sendTemplate?.bodyText.trim()) {
-    await prisma.messageLog.create({
-      data: {
-        contactId: contact.id,
-        numberId: contact.assignedNumberId,
-        direction: "out",
-        templateKey: step.onReplySendTemplateKey,
-        body: sendTemplate.bodyText,
-        status: "queued",
-      },
-    });
+    for (const chunk of splitMessageChunks(sendTemplate.bodyText)) {
+      await prisma.messageLog.create({
+        data: {
+          contactId: contact.id,
+          numberId: contact.assignedNumberId,
+          direction: "out",
+          templateKey: step.onReplySendTemplateKey,
+          body: chunk,
+          status: "queued",
+        },
+      });
+    }
   }
 
   return NextResponse.json({ ok: true });

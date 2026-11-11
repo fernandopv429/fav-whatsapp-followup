@@ -3,6 +3,11 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* Toda a interface é desenhada só pro tema claro (bg-white/text-neutral-900
+     fixos em todo lugar) — sem isso, o Chrome/Firefox em modo escuro do SO
+     renderia inputs, checkboxes e selects com o tema nativo escuro (texto
+     claro) em cima do fundo branco do site, ficando ilegível. */
+  color-scheme: light;
 }
 
 @theme inline {
@@ -10,13 +15,6 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {

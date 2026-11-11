@@ -80,6 +80,7 @@ model FlowStep {
   flow           Flow            @relation(fields: [flowId], references: [id])
   type           FlowStepType
   position        Int
+  label          String? // nome livre pra identificar o passo na tela (ex: "Primeira mensagem")
 
   // send / ai_offer / ai_reply
   templateKey    String?

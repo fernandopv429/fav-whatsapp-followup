@@ -17,6 +17,7 @@ export default function FluxosPage() {
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
 
   const load = async () => {
     const res = await fetch("/api/flows");
@@ -39,6 +40,20 @@ export default function FluxosPage() {
       setFlows((prev) => prev.map((f) => (f.id === flow.id ? { ...f, paused: !flow.paused } : f)));
     } finally {
       setTogglingId(null);
+    }
+  }
+
+  async function handleDuplicate(flow: FlowRow) {
+    setDuplicatingId(flow.id);
+    try {
+      const res = await fetch(`/api/flows/${flow.id}/duplicate`, { method: "POST" });
+      if (res.ok) {
+        const copy = await res.json();
+        await load();
+        router.push(`/fluxos/${copy.id}`);
+      }
+    } finally {
+      setDuplicatingId(null);
     }
   }
 
@@ -69,6 +84,8 @@ export default function FluxosPage() {
         contato percorre depois de iniciado. Monte um fluxo pra cada lógica diferente — ex: um funil de
         qualificação de IA com vários números, e uma cadência simples com um número só. Pausar um fluxo
         trava o envio de novas mensagens e o avanço de quem está nele (mensagens já na fila ainda saem).
+        Pra começar um fluxo parecido com um que já existe, use &quot;Duplicar&quot; — ele copia todos os
+        passos e as ligações entre eles, só muda o nome.
       </p>
 
       <form onSubmit={handleCreate} className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-4 sm:flex-row sm:items-end">
@@ -127,9 +144,18 @@ export default function FluxosPage() {
                   </button>
                 </td>
                 <td className="px-4 py-2">
-                  <Link href={`/fluxos/${f.id}`} className="text-blue-600 hover:underline">
-                    Editar passos
-                  </Link>
+                  <div className="flex flex-wrap gap-3">
+                    <Link href={`/fluxos/${f.id}`} className="text-blue-600 hover:underline">
+                      Editar passos
+                    </Link>
+                    <button
+                      onClick={() => handleDuplicate(f)}
+                      disabled={duplicatingId === f.id}
+                      className="text-neutral-600 hover:underline disabled:opacity-50"
+                    >
+                      {duplicatingId === f.id ? "Duplicando..." : "Duplicar"}
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

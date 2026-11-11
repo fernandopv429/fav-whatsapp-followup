@@ -9,6 +9,7 @@ export async function POST(
   const { id: flowId } = await params;
   const body = (await req.json().catch(() => ({}))) as {
     type?: FlowStepType;
+    label?: string | null;
     templateKey?: string | null;
     numberStrategy?: NumberStrategy | null;
     numberId?: string | null;
@@ -39,6 +40,7 @@ export async function POST(
       flowId,
       type: body.type,
       position,
+      label: body.label || null,
       templateKey: body.templateKey || null,
       numberStrategy: body.numberStrategy || null,
       numberId: body.numberId || null,

@@ -8,6 +8,8 @@ export async function PATCH(
 ) {
   const { stepId } = await params;
   const body = (await req.json().catch(() => ({}))) as {
+    label?: string | null;
+    position?: number;
     templateKey?: string | null;
     numberStrategy?: NumberStrategy | null;
     numberId?: string | null;
@@ -26,6 +28,8 @@ export async function PATCH(
   const step = await prisma.flowStep.update({
     where: { id: stepId },
     data: {
+      ...(body.label !== undefined && { label: body.label || null }),
+      ...(body.position !== undefined && { position: body.position }),
       ...(body.templateKey !== undefined && { templateKey: body.templateKey || null }),
       ...(body.numberStrategy !== undefined && { numberStrategy: body.numberStrategy || null }),
       ...(body.numberId !== undefined && { numberId: body.numberId || null }),

@@ -22,51 +22,6 @@ function extractText(data: EvolutionWebhookBody["data"]): string {
   );
 }
 
-// Proteção contra loop de IA-com-IA: se o número do lead também for um
-// atendimento automático, as duas IAs respondem uma pra outra sem parar.
-// Dois sinais, qualquer um pausa a IA automaticamente (mesmo mecanismo da
-// pausa manual) pra um humano revisar:
-//  - muitas trocas seguidas nesse passo (conversa real também pode ter isso,
-//    mas é um teto generoso só pra não rodar pra sempre);
-//  - respostas rápidas demais em sequência (um humano não bate resposta em
-//    menos de alguns segundos; IA respondendo IA, sim).
-const MAX_AI_EXCHANGES_PER_STEP = 6;
-const FAST_REPLY_THRESHOLD_MS = 4000;
-const FAST_REPLY_STREAK_LIMIT = 3;
-
-interface TurnLog {
-  direction: "in" | "out";
-  createdAt: Date;
-}
-
-/** Colapsa chunks seguidos da mesma direção (uma resposta quebrada em várias mensagens) numa única "vez". */
-function collapseIntoTurns(logs: TurnLog[]): TurnLog[] {
-  const turns: TurnLog[] = [];
-  for (const log of logs) {
-    const last = turns[turns.length - 1];
-    if (last && last.direction === log.direction) {
-      if (log.direction === "out") last.createdAt = log.createdAt; // guarda o último chunk da leva
-    } else {
-      turns.push({ direction: log.direction, createdAt: log.createdAt });
-    }
-  }
-  return turns;
-}
-
-/** Quantas trocas (resposta nossa -> resposta deles) seguidas, a partir da mais recente, vieram rápido demais. */
-function fastReplyStreak(logs: TurnLog[]): number {
-  const turns = collapseIntoTurns(logs);
-  let streak = 0;
-  for (let i = turns.length - 1; i > 0; i--) {
-    const cur = turns[i];
-    const prev = turns[i - 1];
-    if (cur.direction !== "in" || prev.direction !== "out") break;
-    if (cur.createdAt.getTime() - prev.createdAt.getTime() >= FAST_REPLY_THRESHOLD_MS) break;
-    streak++;
-  }
-  return streak;
-}
-
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as EvolutionWebhookBody | null;
   if (!body) return NextResponse.json({ ok: true });
@@ -109,9 +64,21 @@ export async function POST(req: NextRequest) {
     // fica muda pra esse contato até ele reativar.
     if (contact.aiPaused) return NextResponse.json({ ok: true });
 
-    // Conversa aberta: cada mensagem recebida gera uma resposta da IA, sem
-    // nunca avançar currentStepId — o passo permanece ativo indefinidamente,
-    // a não ser que a própria IA sinalize o fim (ver marcadores abaixo).
+    // A IA responde só a primeira mensagem recebida depois de entrar nesse
+    // passo — depois disso, fica muda (só loga, como já faz acima), mesmo
+    // que o lead mande mais mensagens. Evita loop de IA-com-IA (quando o
+    // número do lead também é um atendimento automático) sem precisar
+    // detectar o loop: ele simplesmente não tem como acontecer.
+    const jaRespondeuNessePasso = await prisma.messageLog.count({
+      where: {
+        contactId: contact.id,
+        direction: "out",
+        templateKey: step.templateKey,
+        createdAt: { gte: contact.stepEnteredAt ?? now },
+      },
+    });
+    if (jaRespondeuNessePasso > 0) return NextResponse.json({ ok: true });
+
     const promptTemplate = step.templateKey
       ? await prisma.messageTemplate.findUnique({ where: { key: step.templateKey } })
       : null;
@@ -122,28 +89,10 @@ export async function POST(req: NextRequest) {
       orderBy: { createdAt: "desc" },
       take: 20,
     });
-    const chronological = recentLogs.slice().reverse();
-    const history = chronological.map((l) => ({ direction: l.direction, body: l.body }));
-
-    // A mídia do passo (ex: um PDF de material) só vai junto na primeira resposta
-    // da IA depois de entrar nesse passo — nas seguintes, só texto.
-    const jaRespondeuNessePasso = await prisma.messageLog.count({
-      where: {
-        contactId: contact.id,
-        direction: "out",
-        templateKey: step.templateKey,
-        createdAt: { gte: contact.stepEnteredAt ?? now },
-      },
-    });
-    const isPrimeiraResposta = jaRespondeuNessePasso === 0;
-
-    if (
-      jaRespondeuNessePasso >= MAX_AI_EXCHANGES_PER_STEP ||
-      fastReplyStreak(chronological) >= FAST_REPLY_STREAK_LIMIT
-    ) {
-      await prisma.contact.update({ where: { id: contact.id }, data: { aiPaused: true } });
-      return NextResponse.json({ ok: true });
-    }
+    const history = recentLogs
+      .slice()
+      .reverse()
+      .map((l) => ({ direction: l.direction, body: l.body }));
 
     try {
       const rawReply = await generateAiReply({
@@ -171,7 +120,7 @@ export async function POST(req: NextRequest) {
       const chunks = splitMessageChunks(replyBody);
 
       for (let i = 0; i < chunks.length; i++) {
-        const attachMedia = i === 0 && isPrimeiraResposta;
+        const attachMedia = i === 0; // única resposta desse passo, mídia vai nela
         await prisma.messageLog.create({
           data: {
             contactId: contact.id,

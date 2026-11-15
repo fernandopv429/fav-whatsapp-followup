@@ -57,6 +57,10 @@ export default function NumerosPage() {
         setError(data.error ?? "Falha ao criar número.");
         return;
       }
+      // O número foi criado, mas pode ter ficado sem webhook — nesse caso ele
+      // envia e nunca recebe resposta. Mostra como erro mesmo não tendo falhado
+      // a criação, porque é algo que precisa de ação.
+      if (data.aviso) setError(data.aviso);
       setQrcode({ label: newLabel, base64: data.qrcode?.base64, code: data.qrcode?.code });
       setNewLabel("");
       load();

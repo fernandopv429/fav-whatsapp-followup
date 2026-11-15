@@ -64,17 +64,30 @@ export async function createInstance(instanceName: string) {
   });
 }
 
-/** Configura o webhook de uma instance já criada (resposta via Fluxo 2 do plano). */
+/**
+ * Configura o webhook de uma instance já criada — é por aqui que as respostas
+ * dos leads chegam em /api/webhooks/evolution.
+ *
+ * O corpo vai embrulhado em `{ webhook: {...} }`: a Evolution v2 rejeita o
+ * formato plano com 400 ("instance requires property \"webhook\""). Mandar
+ * plano foi o motivo de nenhum número ter webhook registrado em produção —
+ * a chamada falhava e ninguém via.
+ *
+ * Só MESSAGES_UPSERT: é o único evento que o handler trata hoje, o resto
+ * seria request à toa.
+ */
 export async function setWebhook(instanceName: string, webhookUrl: string, apiKey?: string) {
   return request(`/webhook/set/${instanceName}`, {
     method: "POST",
     apiKey,
     body: {
-      enabled: true,
-      url: webhookUrl,
-      webhookByEvents: false,
-      webhookBase64: false,
-      events: ["MESSAGES_UPSERT", "CONNECTION_UPDATE"],
+      webhook: {
+        enabled: true,
+        url: webhookUrl,
+        webhookByEvents: false,
+        webhookBase64: false,
+        events: ["MESSAGES_UPSERT"],
+      },
     },
   });
 }

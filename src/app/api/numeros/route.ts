@@ -51,10 +51,19 @@ export async function POST(req: NextRequest) {
   const instanceToken =
     typeof created.hash === "string" ? created.hash : created.hash?.apikey;
 
+  // Sem webhook o número envia mas nunca recebe: as respostas dos leads não
+  // chegam no sistema e todo mundo acaba marcado como "sem resposta". Não
+  // derruba a criação do número por isso, mas o aviso precisa chegar na tela —
+  // engolir essa falha só no console já deixou os 3 primeiros números cegos
+  // sem ninguém perceber.
+  let avisoWebhook: string | null = null;
   try {
     await setWebhook(instanceName, `${appUrl}/api/webhooks/evolution`, instanceToken);
   } catch (err) {
-    // Não derruba a criação por causa do webhook; fica visível pro usuário tentar de novo.
+    avisoWebhook =
+      "Número criado, mas não consegui configurar o webhook na Evolution API — " +
+      "ele vai enviar mensagens e NÃO vai receber respostas até isso ser " +
+      `resolvido. Erro: ${err instanceof Error ? err.message : String(err)}`;
     console.error("Falha ao configurar webhook da instance", instanceName, err);
   }
 
@@ -71,5 +80,5 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  return NextResponse.json({ number, qrcode: created.qrcode });
+  return NextResponse.json({ number, qrcode: created.qrcode, aviso: avisoWebhook });
 }

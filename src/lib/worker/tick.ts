@@ -191,6 +191,10 @@ async function advanceSendableSteps(
           const rendered = renderTemplate(template.bodyText, { nome: contact.name });
           const chunks = splitMessageChunks(rendered);
           for (let i = 0; i < chunks.length; i++) {
+            // A mídia vai na ÚLTIMA parte: o texto chega antes e prepara o
+            // terreno, o vídeo/imagem chega como fecho. Anexar na primeira
+            // faria a mídia chegar junto do "Olá, tudo bem?", sem contexto.
+            const anexarMidia = i === chunks.length - 1;
             await prisma.messageLog.create({
               data: {
                 contactId: contact.id,
@@ -198,8 +202,8 @@ async function advanceSendableSteps(
                 direction: "out",
                 templateKey: step.templateKey,
                 body: chunks[i],
-                mediaUrl: i === 0 ? step.mediaUrl ?? undefined : undefined,
-                mediaType: i === 0 ? step.mediaType ?? undefined : undefined,
+                mediaUrl: anexarMidia ? step.mediaUrl ?? undefined : undefined,
+                mediaType: anexarMidia ? step.mediaType ?? undefined : undefined,
                 status: "queued",
               },
             });

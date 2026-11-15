@@ -7,6 +7,10 @@ const PUBLIC_PATHS = [
   "/api/auth/login",
   "/api/webhooks/evolution",
   "/api/internal/tick",
+  // Mídia dos passos de fluxo (vídeo/imagem/PDF anexados nas mensagens):
+  // quem baixa é a Evolution API, de fora, sem sessão — atrás do login ela
+  // receberia o redirect pro /login no lugar do arquivo.
+  "/midia",
 ];
 
 export async function proxy(req: NextRequest) {
